@@ -457,48 +457,122 @@ git commit -m "chore: add Makefile with db-* dev shortcuts"
 
 ---
 
-### Task 9: Install `basejump-supabase_test_helpers` for user impersonation
+### Task 9: Install Basejump test helpers (inline SQL)
 
 **Files:**
 - Create: `supabase/migrations/20260430115000_install_test_helpers.sql`
 
-The test helpers expose `tests.create_supabase_user(identifier)`, `tests.authenticate_as(identifier)`, `tests.clear_authentication()` — these let pgTAP tests act as different authenticated users.
+The test helpers expose `tests.create_supabase_user(identifier)`, `tests.authenticate_as(identifier)`, `tests.clear_authentication()`, `tests.get_supabase_uid(identifier)` — these let pgTAP tests act as different authenticated users.
 
-- [ ] **Step 1: Create the migration**
+> **Note:** the original plan called this "install via `create extension`". That doesn't work — the `basejump-supabase_test_helpers` extension is **not bundled** in Supabase's local Postgres image (verified empirically: `pg_available_extensions` returns nothing for it). Embedding the canonical SQL inline gives identical runtime semantics and avoids depending on the image shipping an extension binary. We also need to load `pgtap` ourselves at the top of the migration because the helpers' `rls_enabled()` SQL functions reference pgTAP's `is(...)` and SQL function bodies are validated at CREATE time.
 
-Create `supabase/migrations/20260430115000_install_test_helpers.sql`:
-
-```sql
--- Install Basejump's Supabase test helpers.
--- Provides the `tests` schema used by pgTAP files to impersonate users.
--- Source: https://github.com/usebasejump/supabase-test-helpers
---
--- These helpers ARE installed in production migrations because Supabase Cloud
--- doesn't differentiate dev/prod migration paths. They're harmless: they live
--- under a `tests` schema, only callable explicitly, and add no policies.
-
-create extension if not exists "basejump-supabase_test_helpers" version '0.0.6';
-```
-
-- [ ] **Step 2: Reset and verify it installs cleanly**
+- [ ] **Step 1: Fetch the canonical helpers SQL**
 
 ```bash
+curl -sL https://raw.githubusercontent.com/usebasejump/supabase-test-helpers/main/supabase_test_helpers--0.0.6.sql -o /tmp/basejump-helpers.sql
+# Strip the first two lines (the `\echo … \quit` directive intended only for
+# `CREATE EXTENSION` consumers).
+tail -n +3 /tmp/basejump-helpers.sql > /tmp/basejump-helpers-clean.sql
+wc -l /tmp/basejump-helpers-clean.sql   # should be ~382
+```
+
+- [ ] **Step 2: Write the migration**
+
+Create `supabase/migrations/20260430115000_install_test_helpers.sql` with this header, then append the cleaned SQL from Step 1:
+
+```sql
+-- ============================================================================
+-- Install Basejump's Supabase test helpers (inline)
+-- ============================================================================
+--
+-- Provides the `tests` schema used by pgTAP files to impersonate users:
+--   - tests.create_supabase_user(identifier, email?, phone?, metadata?)
+--   - tests.get_supabase_uid(identifier)
+--   - tests.authenticate_as(identifier)
+--   - tests.authenticate_as_service_role()
+--   - tests.clear_authentication()
+--   - tests.rls_enabled(schema [, table])
+--   - tests.freeze_time / unfreeze_time
+--
+-- Source: https://github.com/usebasejump/supabase-test-helpers
+-- Version: 0.0.6 (file: supabase_test_helpers--0.0.6.sql)
+--
+-- Why inline instead of `create extension`:
+-- The `basejump-supabase_test_helpers` extension is NOT bundled in Supabase's
+-- local Postgres docker image. Embedding the canonical SQL inline avoids
+-- depending on the image shipping an extension binary.
+--
+-- These helpers are present in production too because Supabase Cloud doesn't
+-- differentiate dev/prod migration paths. They're harmless: they live under a
+-- `tests` / `test_overrides` schema, only callable explicitly, and add no
+-- policies.
+-- ============================================================================
+
+-- Load pgTAP into the `extensions` schema so that the rls_enabled() helpers
+-- below (which call pgTAP's is(...)) parse-resolve at CREATE time. pgTAP is
+-- normally loaded only by `supabase test db`; we need it earlier here.
+CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
+
+-- (then the contents of /tmp/basejump-helpers-clean.sql)
+```
+
+To produce the file mechanically:
+
+```bash
+cat > supabase/migrations/20260430115000_install_test_helpers.sql <<'HEADER'
+-- ============================================================================
+-- Install Basejump's Supabase test helpers (inline)
+-- ============================================================================
+--
+-- Provides the `tests` schema used by pgTAP files to impersonate users:
+--   - tests.create_supabase_user(identifier, email?, phone?, metadata?)
+--   - tests.get_supabase_uid(identifier)
+--   - tests.authenticate_as(identifier)
+--   - tests.authenticate_as_service_role()
+--   - tests.clear_authentication()
+--   - tests.rls_enabled(schema [, table])
+--   - tests.freeze_time / unfreeze_time
+--
+-- Source: https://github.com/usebasejump/supabase-test-helpers
+-- Version: 0.0.6 (file: supabase_test_helpers--0.0.6.sql)
+-- ============================================================================
+
+CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
+
+HEADER
+cat /tmp/basejump-helpers-clean.sql >> supabase/migrations/20260430115000_install_test_helpers.sql
+```
+
+- [ ] **Step 3: Reset and verify it installs cleanly**
+
+```bash
+make db-up         # start the stack if not running
 make db-reset
 ```
 
-Expected: migration runs, no errors. The `tests` schema now exists in the local DB.
+Expected: migration applies without error. The `tests` schema now exists.
 
 ```bash
-supabase db psql -c "select * from tests.create_supabase_user('alice');"
+docker exec -i supabase_db_tradingAgents psql -U postgres -d postgres -t -A <<< "select tests.create_supabase_user('alice') as user_id;"
 ```
 
-Expected: returns a UUID (no error).
+Expected: a UUID-shaped value is returned (e.g. `e04147b8-84f3-4928-a86c-f1838f43290e`).
 
-- [ ] **Step 3: Commit**
+> Note: `supabase db psql` doesn't accept `-c <sql>` in CLI 2.95+. Use the docker exec form above (the container name follows the pattern `supabase_db_<repo-folder-name>`).
+
+- [ ] **Step 4: Stop the stack**
+
+```bash
+make db-down
+```
+
+Expected: containers stop; `docker ps` shows no `supabase_*` containers.
+
+- [ ] **Step 5: Commit**
 
 ```bash
 git add supabase/migrations/20260430115000_install_test_helpers.sql
-git commit -m "feat(db): install supabase_test_helpers for pgTAP impersonation"
+git commit -m "feat(db): inline Basejump test helpers + pgTAP for impersonation"
 ```
 
 ---
