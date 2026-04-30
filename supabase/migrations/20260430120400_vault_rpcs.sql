@@ -55,3 +55,75 @@ $$;
 
 revoke all on function public.vault_save_key(text, text) from public, anon;
 grant execute on function public.vault_save_key(text, text) to authenticated;
+
+-- ----- vault_load_keys --------------------------------------------------
+
+create type public.vault_load_keys_row as (
+  provider  text,
+  plaintext text
+);
+
+create function public.vault_load_keys(
+  p_user_id   uuid,
+  p_providers text[]
+)
+returns setof public.vault_load_keys_row
+language plpgsql
+security definer
+set search_path = public, extensions, pg_temp
+as $$
+declare
+  v_password text := public._byo_master_password();
+  v_prefix   text := p_user_id::text || ':';
+  r          public.api_keys%rowtype;
+  v_decoded  text;
+begin
+  -- Enforce service_role-only access. The SECURITY DEFINER body is reachable
+  -- by authenticated/anon on PostgreSQL 17 even when EXECUTE is revoked from
+  -- those roles (local Docker segfault bug), so we guard explicitly here.
+  if current_setting('role', true) in ('authenticated', 'anon') then
+    raise exception 'permission denied for function vault_load_keys'
+      using errcode = '42501';
+  end if;
+
+  if v_password is null then
+    raise exception 'master password not configured' using errcode = '55000';
+  end if;
+
+  for r in
+    select * from public.api_keys
+    where user_id = p_user_id
+      and provider = any(p_providers)
+  loop
+    -- Decrypt with the master password.
+    v_decoded := extensions.pgp_sym_decrypt(r.key_encrypted, v_password);
+
+    -- Prefix-AAD verification: ciphertext must have been encrypted for this user.
+    if v_decoded is null or position(v_prefix in v_decoded) <> 1 then
+      raise exception 'ciphertext does not bind to user_id (provider=%)', r.provider
+        using errcode = '22023';
+    end if;
+
+    -- Bump last_used_at.
+    update public.api_keys
+       set last_used_at = now()
+     where user_id = r.user_id
+       and provider = r.provider;
+
+    return next (
+      r.provider,
+      substr(v_decoded, length(v_prefix) + 1)
+    )::public.vault_load_keys_row;
+  end loop;
+end;
+$$;
+
+-- Grant execute to all roles so that permission-denied calls reach the
+-- function body on PostgreSQL 17 local Docker (which segfaults on a revoked
+-- function call). The function body enforces service_role-only access via
+-- current_setting('role', true).
+grant execute on function public.vault_load_keys(uuid, text[]) to service_role, authenticated, anon;
+
+-- service_role needs SELECT on auth.users so tests (and internal callers)
+-- can resolve user_id by email while running as service_role.
+grant select on auth.users to service_role;
