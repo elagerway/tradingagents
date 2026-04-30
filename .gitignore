@@ -236,3 +236,6 @@ apps/web/.vercel/
 .env.local
 apps/api/.env
 apps/web/.env*.local
+
+# Claude Code local config
+.claude/
