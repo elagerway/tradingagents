@@ -56,7 +56,7 @@ The v1 architecture is shaped so each phase above is additive — no rewrites re
 | Python engine host | **Render Web Service** | User already operates Render; long-running processes work cleanly with SSE; Dockerfile-first |
 | Auth | **Supabase Auth** (magic link) | Tight Postgres integration; allowlist enforced via DB column |
 | Database | **Supabase Postgres** | Same vendor as auth; RLS policies isolate user data |
-| BYO key storage | **`pgsodium`** (Supabase's transparent encryption) | At-rest encryption with vault-backed keys; decrypts only on Render via service-role RPC |
+| BYO key storage | **`pgcrypto`** (`pgp_sym_encrypt` AES-256) + Vault-stored master password | At-rest encryption with prefix-AAD binding ciphertext to `user_id`; decrypts only on Render via service-role RPC. (Originally specced as `pgsodium` AEAD-det; pivoted because `postgres` lacks `ADMIN OPTION` on `pgsodium_keyiduser` in Supabase's bundled image. See §11.) |
 | Component library | **shadcn/ui + Tailwind** | Vercel-native, copy-paste components, no runtime dependency |
 | Streaming protocol | **Server-Sent Events (SSE)** | One-way is sufficient; native `EventSource` reconnect with `Last-Event-ID` |
 | Browser → Python auth | **Supabase JWT verified against JWKS on Render** | Stateless; Render doesn't hold sessions |
@@ -182,7 +182,7 @@ completed_at    timestamptz
 - `api_keys`: full CRUD where `user_id = auth.uid()`.
 - `runs`: full select where `user_id = auth.uid()`. Inserts are denied for `authenticated` role — the Server Action calls a SECURITY DEFINER function `create_run(input)` that re-checks `auth.uid()` and inserts on the user's behalf. Updates on Render-side use the service role and bypass RLS.
 
-**pgsodium key-rotation strategy:** one key for the whole instance, stored in Supabase Vault. Re-encrypt-on-rotation handled offline if/when needed.
+**Master-password rotation strategy:** one symmetric password for the whole instance, stored in Supabase Vault as `tradingagents_master_password`. Encryption is `pgp_sym_encrypt(<user_id>::text || ':' || <plaintext>, master_password, 'cipher-algo=aes256, compress-algo=2, s2k-mode=3')`. Decryption verifies the `<user_id>:` prefix matches the requested user (prefix-AAD), giving the same cross-user-replay protection AEAD's additional-authenticated-data would provide. Rotation re-encrypts offline if/when needed.
 
 ## 6. Data flow (lifecycle of a single run)
 
@@ -273,8 +273,8 @@ tN+1                                                  background task finishes:
 
 ### BYO key flow (security-critical)
 
-1. User pastes key on `/settings`. Server Action calls Supabase RPC `vault_save_key(user_id, provider, plaintext)`, which uses `pgsodium` to encrypt with the instance's vault key, then inserts into `api_keys.key_encrypted` as `bytea`. **Plaintext leaves Vercel's memory immediately.**
-2. When Render needs the key, it calls a service-role RPC `vault_load_keys(user_id, providers[])` that takes the *minimum* set of providers needed for this run, decrypts only those, returns plaintext, and bumps `last_used_at` for each. Render puts plaintext into a Python dict passed to LangGraph; never logs it; never persists it; the dict goes out of scope when the run ends.
+1. User pastes key on `/settings`. Server Action calls Supabase RPC `vault_save_key(provider, plaintext)`, which prefixes plaintext with `<user_id>:`, encrypts via `pgcrypto`'s `pgp_sym_encrypt` using the Vault-stored master password, and upserts into `api_keys.key_encrypted` as `bytea`. **Plaintext leaves Vercel's memory immediately.**
+2. When Render needs the key, it calls a service-role RPC `vault_load_keys(user_id, providers[])` that takes the *minimum* set of providers needed for this run, decrypts each row with the same master password, verifies the `<user_id>:` prefix matches the requested user (cross-user-replay defense), strips the prefix, returns plaintext, and bumps `last_used_at`. Render puts plaintext into a Python dict passed to LangGraph; never logs it; never persists it; the dict goes out of scope when the run ends.
 3. UI never re-displays plaintext — settings page shows only the masked last-4.
 
 ## 7. Error handling & failure modes
@@ -452,10 +452,11 @@ For v1 we have one Render machine. The browser connects directly to that machine
 |---|---|---|---|
 | App shape | Hosted multi-user web app | Local CLI only; single-user web app; API-only; OSS self-host | User picked C (hosted multi-user) |
 | Audience | Closed beta, 10–200 users | Internal tool; public SaaS | User picked B; lets us skip billing |
-| LLM cost model | BYO API keys, pgsodium-encrypted | Shared keys with quotas; hybrid | User picked BYO; cleanest for beta, $0 cost to us |
+| LLM cost model | BYO API keys, encrypted at rest | Shared keys with quotas; hybrid | User picked BYO; cleanest for beta, $0 cost to us |
 | Frontend host | Vercel + Next.js App Router | All-in-one host | Vercel-native ecosystem, best Next.js DX |
 | Python host | Render Web Service | Fly.io; Modal; Railway; self-host | User already operates Render; switch cost not justified by Fly's marginal wins |
-| Auth + DB | Supabase | Clerk + Neon; Auth0 + Postgres on Render; NextAuth + own DB | One vendor, RLS for tenancy, pgsodium for keys |
+| Auth + DB | Supabase | Clerk + Neon; Auth0 + Postgres on Render; NextAuth + own DB | One vendor, RLS for tenancy, pgcrypto + Vault-stored master password for BYO keys |
+| BYO key encryption | `pgcrypto` `pgp_sym_encrypt` (AES-256) with prefix-AAD; master password in Supabase Vault | `pgsodium` AEAD-det (originally specced); inline raw SQL with manual key | `pgsodium.crypto_aead_det_encrypt` is restricted to `pgsodium_keyiduser`; `postgres` lacks `ADMIN OPTION` to grant the role in Supabase's bundled image, so direct AEAD calls fail. `pgcrypto` is unrestricted and gives equivalent semantics via `<user_id>:`-prefix verify-on-decrypt. Discovered during Plan 1 Task 19; see follow-up in §12. |
 | Run execution model | Approach 1 (direct SSE, in-process bus) | Approach 2 (Vercel proxy); Approach 3 (queue + Realtime) | Smallest viable architecture; A3 is migration path |
 | MVP feature scope | A only (run, watch, history, settings) | B/C/D/E; F (kitchen sink) | Ship A; B–E become discrete future projects |
 | Streaming protocol | SSE | WebSocket; long-poll | One-way is enough; native reconnect; simpler |
@@ -471,3 +472,5 @@ These are things we have *not* decided in this design — flagging so the implem
 - **Specific Render plan** — Starter ($7/mo) is the floor; we'll right-size after first deploy.
 - **Logo / branding** — placeholder for v1; not on critical path.
 - **Whether to fork the upstream repo** — for v1 we treat it as a dependency. If we ever need engine changes, we fork at that moment.
+- **PG17 segfault workaround in `vault_load_keys`** — Supabase's bundled local image segfaults on permission-denied for functions called by `authenticated`/`anon` roles instead of raising `42501`. Current workaround: `vault_load_keys` is granted to `authenticated`/`anon` (preventing the SIGSEGV) and the function body checks `current_setting('role')` itself, raising `42501` for non-`service_role` callers. Defense moves from ACL-only to body+ACL. Remove the body check once the upstream image bug is fixed (track via Supabase issue tracker).
+- **Forked Basejump test helpers email format** — the inlined `tests.create_supabase_user` was modified to default emails to `<identifier>@test.com` instead of `<uuid>@test.com` for predictable `where email like 'alice%'` test queries. Note this when re-syncing with upstream Basejump.
