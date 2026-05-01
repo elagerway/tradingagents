@@ -27,6 +27,59 @@ router = APIRouter()
 logger = get_logger(__name__)
 
 
+# Web/DB provider names → engine provider names. The web form + api_keys
+# table use "dashscope"/"zhipu" (the API endpoint's marketing names);
+# the engine's LLM client factory expects "qwen"/"glm".
+_PROVIDER_NAME_TO_ENGINE: dict[str, str] = {
+    "dashscope": "qwen",
+    "zhipu": "glm",
+}
+
+
+# Default (deep_think_llm, quick_think_llm) per engine provider. Without
+# these, the engine inherits OpenAI's gpt-5.4* defaults from
+# DEFAULT_CONFIG and every non-OpenAI provider rejects the request as
+# "unknown model". Sourced from tradingagents.llm_clients.model_catalog.
+_PROVIDER_DEFAULT_MODELS: dict[str, tuple[str, str]] = {
+    "openai": ("gpt-5.4", "gpt-5.4-mini"),
+    "anthropic": ("claude-opus-4-7", "claude-sonnet-4-6"),
+    "google": ("gemini-3.1-pro-preview", "gemini-3-flash-preview"),
+    "xai": ("grok-4-0709", "grok-4-1-fast-non-reasoning"),
+    "deepseek": ("deepseek-reasoner", "deepseek-chat"),
+    "qwen": ("qwen3.6-plus", "qwen3.5-flash"),
+    "glm": ("glm-5.1", "glm-4.7"),
+}
+
+
+def _build_engine_config(*, run_config: dict, api_key: str) -> dict[str, Any]:
+    """Compose the engine_config dict for TradingAgentsGraph.
+
+    Picks provider-appropriate model defaults if `run_config` doesn't
+    explicitly set deep_think_llm / quick_think_llm, and translates
+    web-side provider names ("dashscope"/"zhipu") to the engine names
+    ("qwen"/"glm") expected by tradingagents.llm_clients.factory.
+    """
+    from tradingagents.default_config import DEFAULT_CONFIG
+
+    provider_web = run_config.get("llm_provider", "openai")
+    provider_engine = _PROVIDER_NAME_TO_ENGINE.get(provider_web, provider_web)
+    deep_default, quick_default = _PROVIDER_DEFAULT_MODELS.get(
+        provider_engine, _PROVIDER_DEFAULT_MODELS["openai"]
+    )
+
+    return {
+        **DEFAULT_CONFIG,
+        **run_config,
+        "llm_provider": provider_engine,
+        "deep_think_llm": run_config.get("deep_think_llm", deep_default),
+        "quick_think_llm": run_config.get("quick_think_llm", quick_default),
+        "api_key": api_key,
+        # Render's container has /tmp writable but $HOME may be locked-down
+        "results_dir": "/tmp/tradingagents/logs",
+        "data_cache_dir": "/tmp/tradingagents/cache",
+    }
+
+
 def _make_engine_factory(
     *,
     callbacks,
@@ -46,8 +99,6 @@ def _make_engine_factory(
         return lambda: FakeTradingAgentsGraph(callbacks=callbacks)
 
     # Real engine path
-    from tradingagents.default_config import DEFAULT_CONFIG
-
     from api.real_engine import TradingAgentsGraphWithUserContext
 
     rc = run_config or {}
@@ -59,18 +110,12 @@ def _make_engine_factory(
         raise RuntimeError("user_id is required for real-engine factory")
 
     settings = get_settings()
-    engine_config = {
-        **DEFAULT_CONFIG,
-        **rc,
-        "api_key": api_key,
-        # Render's container has /tmp writable but $HOME may be locked-down
-        "results_dir": "/tmp/tradingagents/logs",
-        "data_cache_dir": "/tmp/tradingagents/cache",
-    }
+    engine_config = _build_engine_config(run_config=rc, api_key=api_key)
 
     logger.info(
         "real_engine_factory",
-        provider=provider,
+        provider_web=provider,
+        provider_engine=engine_config["llm_provider"],
         deep_think_llm=engine_config.get("deep_think_llm"),
         quick_think_llm=engine_config.get("quick_think_llm"),
         max_debate_rounds=engine_config.get("max_debate_rounds"),

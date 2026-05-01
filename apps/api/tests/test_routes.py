@@ -216,3 +216,49 @@ def test_make_engine_factory_real_path_threads_user_id_to_memory(monkeypatch):
     assert kwargs["user_id"] == test_user_id
     assert kwargs["supabase_url"] == "http://test.local"
     assert kwargs["service_role_key"] == "srv"
+
+
+@pytest.mark.parametrize(
+    ("provider_in", "provider_engine", "deep", "quick"),
+    [
+        ("openai", "openai", "gpt-5.4", "gpt-5.4-mini"),
+        ("anthropic", "anthropic", "claude-opus-4-7", "claude-sonnet-4-6"),
+        ("google", "google", "gemini-3.1-pro-preview", "gemini-3-flash-preview"),
+        ("xai", "xai", "grok-4-0709", "grok-4-1-fast-non-reasoning"),
+        ("deepseek", "deepseek", "deepseek-reasoner", "deepseek-chat"),
+        # Web/DB names ("dashscope"/"zhipu") translate to engine names ("qwen"/"glm")
+        ("dashscope", "qwen", "qwen3.6-plus", "qwen3.5-flash"),
+        ("zhipu", "glm", "glm-5.1", "glm-4.7"),
+    ],
+)
+def test_build_engine_config_picks_provider_defaults(provider_in, provider_engine, deep, quick):
+    """Without explicit deep/quick model strings, the engine_config must
+    pick provider-appropriate defaults — otherwise non-OpenAI providers
+    get 'gpt-5.4-mini' and the LLM API rejects the request."""
+    from api.routes import _build_engine_config
+
+    cfg = _build_engine_config(
+        run_config={"llm_provider": provider_in},
+        api_key="sk-fake",
+    )
+    assert cfg["llm_provider"] == provider_engine
+    assert cfg["deep_think_llm"] == deep
+    assert cfg["quick_think_llm"] == quick
+    assert cfg["api_key"] == "sk-fake"
+
+
+def test_build_engine_config_respects_explicit_models():
+    """If the run_config supplies its own deep/quick models, the helper
+    must not overwrite them with provider defaults."""
+    from api.routes import _build_engine_config
+
+    cfg = _build_engine_config(
+        run_config={
+            "llm_provider": "deepseek",
+            "deep_think_llm": "deepseek-v4-pro",
+            "quick_think_llm": "deepseek-v4-flash",
+        },
+        api_key="sk-fake",
+    )
+    assert cfg["deep_think_llm"] == "deepseek-v4-pro"
+    assert cfg["quick_think_llm"] == "deepseek-v4-flash"
