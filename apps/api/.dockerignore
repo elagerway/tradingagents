@@ -1,0 +1,16 @@
+# Build context is the repo root (per render.yaml rootDir: .)
+# Start from "exclude everything" then opt-in
+**/*
+
+# Include just what we need
+!apps/api/pyproject.toml
+!apps/api/uv.lock
+!apps/api/src/
+!tradingagents/
+!tradingagents/**
+
+# Exclude __pycache__ + tests
+**/__pycache__
+**/.pytest_cache
+**/*.pyc
+apps/api/tests/

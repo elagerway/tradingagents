@@ -1,37 +1,13 @@
-# =============================================================================
-# render.yaml — Render Blueprint for the FastAPI engine service
-# =============================================================================
-#
-# Status: PLACEHOLDER. Populated for real in Plan 2 (apps/api/ implementation).
-#
-# How Render Blueprints work:
-#   1. Commit this file to the repo's main branch.
-#   2. In the Render dashboard: New -> Blueprint -> point at this repo.
-#   3. Render reads this file and provisions the declared services.
-#   4. Future commits that change render.yaml are picked up automatically.
-#
-# Docs: https://render.com/docs/blueprint-spec
-# =============================================================================
-
 services:
-  # ---------------------------------------------------------------------------
-  # tradingagents-api
-  # ---------------------------------------------------------------------------
-  # FastAPI service hosting the LangGraph engine. Runs on a single instance
-  # for the closed beta; scaling is a Plan 4 / future concern.
   - type: web
     name: tradingagents-api
     runtime: docker
-    region: oregon                     # change to your preferred Render region
-    plan: starter                      # $7/mo; size up if multi-agent runs need more RAM
-    rootDir: apps/api                  # populated in Plan 2
-    dockerfilePath: ./Dockerfile       # apps/api/Dockerfile — created in Plan 2
-    healthCheckPath: /healthz          # implemented in Plan 2 task
-    autoDeploy: true                   # deploy on every push to main
-
-    # Environment variables. Values are NOT committed — they're set in Render's
-    # dashboard (Service -> Environment) or via the Render API. We reference
-    # them here so Render knows which keys must exist.
+    region: oregon
+    plan: starter
+    rootDir: .
+    dockerfilePath: apps/api/Dockerfile
+    healthCheckPath: /healthz
+    autoDeploy: true
     envVars:
       - key: SUPABASE_URL
         sync: false
@@ -40,31 +16,25 @@ services:
       - key: SUPABASE_JWT_SECRET
         sync: false
       - key: USE_FAKE_ENGINE
-        value: "0"                     # "1" only on preview/CI, never on prod
-      - key: PYTHON_VERSION
-        value: "3.13"
+        value: "1"
+      - key: LOG_JSON
+        value: "true"
+      - key: LOG_LEVEL
+        value: "INFO"
 
-    # Render injects PORT; FastAPI must bind to it. The Dockerfile's CMD will
-    # honor this (uvicorn --host 0.0.0.0 --port $PORT).
-
-# =============================================================================
-# Notes for Plan 2 execution
-# =============================================================================
-#
-# - Add a `databases:` block here ONLY if we ever decide to host a Render
-#   Postgres alongside Supabase. v1 uses Supabase exclusively, so no DB block.
-#
-# - Add a `crons:` block here for the janitor that scans stuck `running` rows.
-#   Plan 2 task will populate it like:
-#
-#     - type: cron
-#       name: tradingagents-janitor
-#       runtime: docker
-#       rootDir: apps/api
-#       dockerfilePath: ./Dockerfile
-#       schedule: "*/5 * * * *"
-#       dockerCommand: python -m api.janitor
-#       envVars: [...same as service...]
-#
-# - Render's free tier no longer covers persistent web services (see decisions
-#   log in the spec). Starter plan ($7/mo) is the floor.
+  - type: cron
+    name: tradingagents-janitor
+    runtime: docker
+    region: oregon
+    plan: starter
+    schedule: "*/5 * * * *"
+    rootDir: .
+    dockerfilePath: apps/api/Dockerfile
+    dockerCommand: python -m api.janitor
+    envVars:
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: STUCK_RUN_THRESHOLD_MINUTES
+        value: "30"
