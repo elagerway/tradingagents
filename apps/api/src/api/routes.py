@@ -63,6 +63,14 @@ def _make_engine_factory(
         "data_cache_dir": "/tmp/tradingagents/cache",
     }
 
+    logger.info(
+        "real_engine_factory",
+        provider=provider,
+        deep_think_llm=engine_config.get("deep_think_llm"),
+        quick_think_llm=engine_config.get("quick_think_llm"),
+        max_debate_rounds=engine_config.get("max_debate_rounds"),
+    )
+
     return lambda: TradingAgentsGraphWithApiKey(
         selected_analysts=["market", "social", "news", "fundamentals"],
         debug=False,
