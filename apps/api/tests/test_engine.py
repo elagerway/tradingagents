@@ -69,3 +69,20 @@ def test_tool_events_only_in_verbose_mode():
     assert len(events) == 1
     assert events[0].data["type"] == "tool_called"
     assert events[0].data["tool"] == "get_stock_data"
+
+
+def test_fake_engine_emits_full_event_sequence():
+    from tests.fakes.fake_engine import CANNED_AGENTS, FakeTradingAgentsGraph
+
+    bus = Bus()
+    publisher = SSEPublisher(bus=bus, run_id="r", verbose=False)
+    fake = FakeTradingAgentsGraph(callbacks=[publisher])
+
+    final_state, decision = fake.propagate("NVDA", "2026-01-15")
+
+    types = [e.data["type"] for e in bus.replay_since(0)]
+    # Each agent fires: started → thinking → completed (3 events × N agents)
+    assert types.count("agent_started") == len(CANNED_AGENTS)
+    assert types.count("agent_thinking") == len(CANNED_AGENTS)
+    assert types.count("agent_completed") == len(CANNED_AGENTS)
+    assert decision == "BUY"
