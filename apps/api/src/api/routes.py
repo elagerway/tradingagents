@@ -123,6 +123,10 @@ async def stream_run(
         # Replay missed events
         for event in bus.replay_since(last_event_id):
             yield {"id": str(event.id), "data": _json(event.data)}
+        # If bus was already closed before we subscribed, stop here
+        if bus.closed:
+            bus.unsubscribe(queue)
+            return
         # Live stream
         from api.bus import SENTINEL
         try:
