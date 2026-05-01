@@ -240,3 +240,4 @@ apps/web/.env*.local
 
 # Claude Code local config
 .claude/
+.vercel
