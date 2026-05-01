@@ -27,14 +27,48 @@ router = APIRouter()
 logger = get_logger(__name__)
 
 
-def _make_engine_factory(*, callbacks, fake: bool, env: dict[str, str]):
+def _make_engine_factory(
+    *,
+    callbacks,
+    fake: bool,
+    env: dict[str, str],
+    run_config: dict | None = None,
+):
     """Returns a callable that constructs an engine instance with our
-    callback wired in. Plan 4 swaps the fake for the real one."""
+    callback wired in. The fake variant is used in tests + Plan 2-3 deploys;
+    the real variant runs the upstream LangGraph engine with BYO keys
+    threaded through config."""
     if fake:
         from api.fakes.fake_engine import FakeTradingAgentsGraph
 
         return lambda: FakeTradingAgentsGraph(callbacks=callbacks)
-    raise NotImplementedError("real engine wiring lands in Plan 4")
+
+    # Real engine path
+    from tradingagents.default_config import DEFAULT_CONFIG
+
+    from api.real_engine import TradingAgentsGraphWithApiKey
+
+    rc = run_config or {}
+    provider = rc.get("llm_provider", "openai")
+    api_key = env.get(provider)
+    if not api_key:
+        raise RuntimeError(f"No BYO key loaded for provider: {provider}")
+
+    engine_config = {
+        **DEFAULT_CONFIG,
+        **rc,
+        "api_key": api_key,
+        # Render's container has /tmp writable but $HOME may be locked-down
+        "results_dir": "/tmp/tradingagents/logs",
+        "data_cache_dir": "/tmp/tradingagents/cache",
+    }
+
+    return lambda: TradingAgentsGraphWithApiKey(
+        selected_analysts=["market", "social", "news", "fundamentals"],
+        debug=False,
+        config=engine_config,
+        callbacks=callbacks,
+    )
 
 
 @router.post("/runs/{run_id}/start", status_code=status.HTTP_202_ACCEPTED)
@@ -82,6 +116,7 @@ async def start_run(
         callbacks=[publisher],
         fake=settings.use_fake_engine,
         env=env_keys,
+        run_config=run.get("config") or {},
     )
 
     # 4. Kick off the run as a background task

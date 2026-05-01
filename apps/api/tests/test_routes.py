@@ -126,6 +126,7 @@ def test_make_engine_factory_real_path_uses_subclass(monkeypatch):
     monkeypatch.setenv("SUPABASE_SERVICE_ROLE_KEY", "srv")
 
     from api.settings import get_settings
+
     get_settings.cache_clear()
 
     from unittest.mock import patch

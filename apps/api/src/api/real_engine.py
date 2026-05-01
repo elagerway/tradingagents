@@ -7,6 +7,7 @@ constructed at __init__ time with the api_key baked in.
 
 We don't modify the upstream package; we subclass it in our wrapper.
 """
+
 from __future__ import annotations
 
 from typing import Any
