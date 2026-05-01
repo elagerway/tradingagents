@@ -1,4 +1,4 @@
-.PHONY: db-up db-down db-reset db-test db-status api-install api-dev api-test api-lint help
+.PHONY: db-up db-down db-reset db-test db-status api-install api-dev api-test api-lint api-test-real help
 
 help:
 	@echo "Snapsonic dev targets:"
@@ -11,6 +11,7 @@ help:
 	@echo "  make api-dev     - run FastAPI dev server with reload"
 	@echo "  make api-test    - run pytest in apps/api"
 	@echo "  make api-lint    - lint apps/api with ruff"
+	@echo "  make api-test-real - run real-engine smoke (calls real LLMs, ~\$$0.005)"
 
 db-up:
 	supabase start
@@ -41,3 +42,9 @@ api-test:
 
 api-lint:
 	cd apps/api && uv run ruff check . && uv run ruff format --check .
+
+# Run ONLY real-engine tests (calls real LLMs, costs ~$0.005-0.05)
+# Requires: DEEPSEEK_API_KEY (or override LLM_PROVIDER + corresponding key)
+.PHONY: api-test-real
+api-test-real:
+	cd apps/api && uv run pytest -m real_engine --run-real-engine -v
