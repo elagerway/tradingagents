@@ -1,0 +1,45 @@
+name: API CI
+
+on:
+  pull_request:
+    paths:
+      - 'apps/api/**'
+      - 'tradingagents/**'
+      - '.github/workflows/api-ci.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'apps/api/**'
+
+jobs:
+  pytest:
+    name: pytest (apps/api)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+
+      - name: Install dependencies
+        working-directory: apps/api
+        run: uv sync --locked
+
+      - name: Lint
+        working-directory: apps/api
+        run: uv run ruff check . && uv run ruff format --check .
+
+      - name: Tests
+        working-directory: apps/api
+        env:
+          SUPABASE_URL: http://test.local
+          SUPABASE_SERVICE_ROLE_KEY: test-srv
+          SUPABASE_JWT_SECRET: test-secret-do-not-use-in-prod
+          USE_FAKE_ENGINE: "1"
+        run: uv run pytest -v
