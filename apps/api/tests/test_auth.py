@@ -1,0 +1,51 @@
+"""Tests for JWT verification."""
+import time
+from uuid import UUID
+
+import jwt
+import pytest
+from fastapi import HTTPException
+
+from api.auth import decode_user_token
+
+
+HS256_SECRET = "test-secret-do-not-use-in-prod"
+SUB_UUID = "11111111-2222-3333-4444-555555555555"
+
+
+def make_token(*, sub: str = SUB_UUID, exp_offset: int = 3600,
+               aud: str = "authenticated", role: str = "authenticated") -> str:
+    payload = {
+        "sub": sub,
+        "aud": aud,
+        "role": role,
+        "exp": int(time.time()) + exp_offset,
+        "iss": "https://test.supabase.co/auth/v1",
+    }
+    return jwt.encode(payload, HS256_SECRET, algorithm="HS256")
+
+
+def test_valid_hs256_token_returns_user_id():
+    token = make_token()
+    user_id = decode_user_token(token, hs256_secret=HS256_SECRET)
+    assert user_id == UUID(SUB_UUID)
+
+
+def test_expired_token_raises_401():
+    token = make_token(exp_offset=-60)
+    with pytest.raises(HTTPException) as exc:
+        decode_user_token(token, hs256_secret=HS256_SECRET)
+    assert exc.value.status_code == 401
+
+
+def test_wrong_audience_raises_401():
+    token = make_token(aud="anon")
+    with pytest.raises(HTTPException) as exc:
+        decode_user_token(token, hs256_secret=HS256_SECRET)
+    assert exc.value.status_code == 401
+
+
+def test_malformed_token_raises_401():
+    with pytest.raises(HTTPException) as exc:
+        decode_user_token("not.a.real.jwt", hs256_secret=HS256_SECRET)
+    assert exc.value.status_code == 401
