@@ -49,3 +49,36 @@ def test_start_run_returns_202_with_fake_engine(app, auth_header):
 
     assert r.status_code == 202
     assert r.json() == {"run_id": RUN_ID, "status": "started"}
+
+
+def test_stream_returns_sse_events(app, auth_header):
+    """Smoke test that the SSE endpoint returns text/event-stream and at
+    least one event when a run is in flight."""
+    client = TestClient(app)
+
+    # Manually populate the bus to simulate an in-flight run
+    from api.bus import registry
+    bus = registry.get_or_create(RUN_ID)
+    bus.publish({"type": "agent_started", "agent": "market_analyst"})
+    bus.publish({"type": "agent_completed", "agent": "market_analyst", "summary": "ok"})
+
+    # Close the bus before streaming; use Last-Event-ID: 0 to replay all events
+    bus.close()
+
+    r = client.get(
+        f"/runs/{RUN_ID}/stream",
+        headers={**auth_header, "accept": "text/event-stream", "Last-Event-ID": "0"},
+    )
+    assert r.status_code == 200
+    assert r.headers["content-type"].startswith("text/event-stream")
+    assert "agent_started" in r.text
+
+    # Cleanup
+    registry.drop(RUN_ID)
+
+
+def test_stream_404_when_run_not_in_registry(app, auth_header):
+    client = TestClient(app)
+    r = client.get(f"/runs/00000000-0000-0000-0000-000000000fff/stream",
+                   headers=auth_header)
+    assert r.status_code == 404
