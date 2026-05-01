@@ -1,10 +1,12 @@
 """Async worker that drives the (sync) LangGraph engine on a thread and
 feeds events to a Bus. On completion, publishes a `run_completed` event
 and closes the bus."""
+
 from __future__ import annotations
 
 import asyncio
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from api.bus import Bus
 from api.logging import get_logger

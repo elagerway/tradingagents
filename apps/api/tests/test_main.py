@@ -1,4 +1,5 @@
 """Smoke tests for the FastAPI app."""
+
 from fastapi.testclient import TestClient
 
 from api.main import create_app

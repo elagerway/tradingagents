@@ -1,4 +1,5 @@
 """Tests for the in-process SSE event bus."""
+
 import asyncio
 
 import pytest
@@ -24,7 +25,7 @@ async def test_publish_fans_out_to_all_subscribers():
 
 
 async def test_buffer_evicts_old_events():
-    from api.bus import Bus, BUFFER_SIZE
+    from api.bus import BUFFER_SIZE, Bus
 
     bus = Bus()
     for i in range(BUFFER_SIZE + 50):
@@ -49,7 +50,7 @@ async def test_replay_since_returns_only_newer_events():
 
 
 async def test_close_pushes_sentinel_to_all_subscribers():
-    from api.bus import Bus, SENTINEL
+    from api.bus import SENTINEL, Bus
 
     bus = Bus()
     queue_a = bus.subscribe()

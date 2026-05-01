@@ -1,4 +1,5 @@
 """FastAPI routes for runs."""
+
 from __future__ import annotations
 
 import asyncio
@@ -15,7 +16,10 @@ from api.keys import KeyVaultError, load_keys
 from api.logging import get_logger
 from api.settings import get_settings
 from api.supabase_runs import (
-    fail_run, fetch_run, finalize_run, mark_run_started,
+    fail_run,
+    fetch_run,
+    finalize_run,
+    mark_run_started,
 )
 from api.worker import run_engine
 
@@ -28,6 +32,7 @@ def _make_engine_factory(*, callbacks, fake: bool, env: dict[str, str]):
     callback wired in. Plan 4 swaps the fake for the real one."""
     if fake:
         from tests.fakes.fake_engine import FakeTradingAgentsGraph
+
         return lambda: FakeTradingAgentsGraph(callbacks=callbacks)
     raise NotImplementedError("real engine wiring lands in Plan 4")
 
@@ -59,7 +64,10 @@ async def start_run(
             service_role_key=settings.supabase_service_role_key,
         )
     except KeyVaultError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
 
     # 3. Mark run started + create bus
     await mark_run_started(
@@ -71,7 +79,9 @@ async def start_run(
     publisher = SSEPublisher(bus=bus, run_id=str(run_id), verbose=False)
 
     factory = _make_engine_factory(
-        callbacks=[publisher], fake=settings.use_fake_engine, env=env_keys,
+        callbacks=[publisher],
+        fake=settings.use_fake_engine,
+        env=env_keys,
     )
 
     # 4. Kick off the run as a background task
@@ -129,6 +139,7 @@ async def stream_run(
             return
         # Live stream
         from api.bus import SENTINEL
+
         try:
             while True:
                 event = await queue.get()
@@ -143,4 +154,5 @@ async def stream_run(
 
 def _json(obj) -> str:
     import json
+
     return json.dumps(obj)

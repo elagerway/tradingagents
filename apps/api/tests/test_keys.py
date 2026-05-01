@@ -1,4 +1,5 @@
 """Tests for the vault_load_keys client."""
+
 from uuid import UUID
 
 import httpx
@@ -6,13 +7,13 @@ import pytest
 
 from api.keys import KeyVaultError, load_keys
 
-
 USER_ID = UUID("11111111-2222-3333-4444-555555555555")
 
 
 def make_mock_transport(*, status_code: int, payload):
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(status_code, json=payload)
+
     return httpx.MockTransport(handler)
 
 

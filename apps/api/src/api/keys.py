@@ -4,6 +4,7 @@ Fetches BYO API keys for a specific (user, providers) pair via Supabase's
 PostgREST RPC endpoint, using the service-role key. Plaintext lives only
 in the returned dict and never enters logs.
 """
+
 from __future__ import annotations
 
 from uuid import UUID
@@ -63,8 +64,7 @@ async def load_keys(
             missing_providers=sorted(missing),
         )
         raise KeyVaultError(
-            f"No API key configured for: {', '.join(sorted(missing))}. "
-            "Add one in Settings."
+            f"No API key configured for: {', '.join(sorted(missing))}. Add one in Settings."
         )
 
     logger.info(

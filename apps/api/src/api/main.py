@@ -1,4 +1,5 @@
 """FastAPI app factory."""
+
 from fastapi import FastAPI
 
 from api.logging import configure_logging

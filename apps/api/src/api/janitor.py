@@ -3,11 +3,12 @@ failed. Designed to be invoked by a Render cron job every 5 minutes.
 
 Entry point: `python -m api.janitor`
 """
+
 from __future__ import annotations
 
 import asyncio
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import httpx
 
@@ -24,7 +25,7 @@ async def sweep_stuck_runs(
     threshold_minutes: int,
     transport: httpx.AsyncBaseTransport | None = None,
 ) -> int:
-    cutoff = (datetime.now(timezone.utc) - timedelta(minutes=threshold_minutes)).isoformat()
+    cutoff = (datetime.now(UTC) - timedelta(minutes=threshold_minutes)).isoformat()
     base = supabase_url.rstrip("/")
     headers = {
         "apikey": service_role_key,
@@ -55,15 +56,17 @@ async def sweep_stuck_runs(
                 f"{base}/rest/v1/runs",
                 headers=headers,
                 params={"id": f"eq.{row['id']}"},
-                content=json.dumps({
-                    "status": "failed",
-                    "completed_at": datetime.now(timezone.utc).isoformat(),
-                    "error": "Run timed out or worker died",
-                }, default=str),
+                content=json.dumps(
+                    {
+                        "status": "failed",
+                        "completed_at": datetime.now(UTC).isoformat(),
+                        "error": "Run timed out or worker died",
+                    },
+                    default=str,
+                ),
             )
             if patch.status_code not in (200, 204):
-                logger.error("janitor patch failed",
-                             run_id=row["id"], status=patch.status_code)
+                logger.error("janitor patch failed", run_id=row["id"], status=patch.status_code)
 
     logger.info("janitor sweep done", swept=len(stuck))
     return len(stuck)
@@ -73,11 +76,13 @@ def main() -> None:
     """Cron entrypoint: `python -m api.janitor`."""
     configure_logging()
     settings = get_settings()
-    swept = asyncio.run(sweep_stuck_runs(
-        supabase_url=settings.supabase_url,
-        service_role_key=settings.supabase_service_role_key,
-        threshold_minutes=settings.stuck_run_threshold_minutes,
-    ))
+    swept = asyncio.run(
+        sweep_stuck_runs(
+            supabase_url=settings.supabase_url,
+            service_role_key=settings.supabase_service_role_key,
+            threshold_minutes=settings.stuck_run_threshold_minutes,
+        )
+    )
     print(f"swept {swept} stuck runs")
 
 

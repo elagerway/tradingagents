@@ -3,6 +3,7 @@
 Wraps the upstream tradingagents engine without modifying it. Each LangGraph
 node lifecycle event becomes a typed SSE event on a per-run_id Bus.
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -40,7 +41,9 @@ class SSEPublisher(BaseCallbackHandler):
 
     # --- node lifecycle --------------------------------------------------
 
-    def on_chain_start(self, serialized, inputs, *, run_id: UUID, name: str | None = None, **kwargs) -> None:
+    def on_chain_start(
+        self, serialized, inputs, *, run_id: UUID, name: str | None = None, **kwargs
+    ) -> None:
         agent = _agent_name(name, serialized)
         self.bus.publish({"type": "agent_started", "agent": agent})
 
@@ -56,23 +59,29 @@ class SSEPublisher(BaseCallbackHandler):
             if not summary_text:
                 # fallback — stringify outputs
                 summary_text = str(outputs)
-        self.bus.publish({
-            "type": "agent_completed",
-            "agent": agent,
-            "summary": _truncate(summary_text),
-        })
+        self.bus.publish(
+            {
+                "type": "agent_completed",
+                "agent": agent,
+                "summary": _truncate(summary_text),
+            }
+        )
 
     def on_chain_error(self, error, *, run_id: UUID, name: str | None = None, **kwargs) -> None:
         agent = _agent_name(name, None)
-        self.bus.publish({
-            "type": "agent_error",
-            "agent": agent,
-            "error": _truncate(str(error)),
-        })
+        self.bus.publish(
+            {
+                "type": "agent_error",
+                "agent": agent,
+                "error": _truncate(str(error)),
+            }
+        )
 
     # --- LLM-level (heartbeat) ------------------------------------------
 
-    def on_chat_model_start(self, serialized, messages, *, run_id: UUID, name: str | None = None, **kwargs) -> None:
+    def on_chat_model_start(
+        self, serialized, messages, *, run_id: UUID, name: str | None = None, **kwargs
+    ) -> None:
         agent = _agent_name(name, serialized)
         self.bus.publish({"type": "agent_thinking", "agent": agent})
 
@@ -82,7 +91,9 @@ class SSEPublisher(BaseCallbackHandler):
         if not self.verbose:
             return
         tool = (serialized or {}).get("name", "unknown")
-        self.bus.publish({"type": "tool_called", "tool": tool, "args": _truncate(str(input_str), 200)})
+        self.bus.publish(
+            {"type": "tool_called", "tool": tool, "args": _truncate(str(input_str), 200)}
+        )
 
     def on_tool_end(self, output, *, run_id: UUID, **kwargs) -> None:
         if not self.verbose:

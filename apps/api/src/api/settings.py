@@ -1,4 +1,5 @@
 """Runtime configuration via environment variables."""
+
 from functools import lru_cache
 
 from pydantic import Field
@@ -22,7 +23,9 @@ class Settings(BaseSettings):
     use_fake_engine: bool = Field(True, description="Plan 2 ships with fake; Plan 4 flips this")
 
     # Janitor
-    stuck_run_threshold_minutes: int = Field(30, description="Mark running rows older than this as failed")
+    stuck_run_threshold_minutes: int = Field(
+        30, description="Mark running rows older than this as failed"
+    )
 
     # Logging
     log_level: str = Field("INFO")

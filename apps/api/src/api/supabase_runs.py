@@ -2,10 +2,11 @@
 
 Used by the worker to: load the run row, transition status, persist final
 state. All calls bypass RLS (service_role)."""
+
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
@@ -26,7 +27,10 @@ def _headers(key: str) -> dict[str, str]:
 
 
 async def fetch_run(
-    *, run_id: UUID, supabase_url: str, service_role_key: str,
+    *,
+    run_id: UUID,
+    supabase_url: str,
+    service_role_key: str,
     transport: httpx.AsyncBaseTransport | None = None,
 ) -> dict[str, Any]:
     url = f"{supabase_url.rstrip('/')}/rest/v1/runs"
@@ -45,8 +49,11 @@ async def fetch_run(
 
 
 async def _patch_run(
-    *, run_id: UUID, body: dict[str, Any],
-    supabase_url: str, service_role_key: str,
+    *,
+    run_id: UUID,
+    body: dict[str, Any],
+    supabase_url: str,
+    service_role_key: str,
     transport: httpx.AsyncBaseTransport | None = None,
 ) -> None:
     url = f"{supabase_url.rstrip('/')}/rest/v1/runs"
@@ -62,14 +69,17 @@ async def _patch_run(
 
 
 async def mark_run_started(
-    *, run_id: UUID, supabase_url: str, service_role_key: str,
+    *,
+    run_id: UUID,
+    supabase_url: str,
+    service_role_key: str,
     transport: httpx.AsyncBaseTransport | None = None,
 ) -> None:
     await _patch_run(
         run_id=run_id,
         body={
             "status": "running",
-            "started_at": datetime.now(timezone.utc).isoformat(),
+            "started_at": datetime.now(UTC).isoformat(),
         },
         supabase_url=supabase_url,
         service_role_key=service_role_key,
@@ -78,16 +88,20 @@ async def mark_run_started(
 
 
 async def finalize_run(
-    *, run_id: UUID, decision: str, events: list[dict[str, Any]],
+    *,
+    run_id: UUID,
+    decision: str,
+    events: list[dict[str, Any]],
     final_state_keys: list[str],
-    supabase_url: str, service_role_key: str,
+    supabase_url: str,
+    service_role_key: str,
     transport: httpx.AsyncBaseTransport | None = None,
 ) -> None:
     await _patch_run(
         run_id=run_id,
         body={
             "status": "completed",
-            "completed_at": datetime.now(timezone.utc).isoformat(),
+            "completed_at": datetime.now(UTC).isoformat(),
             "final_decision": {"decision": decision, "state_keys": final_state_keys},
             "events": events,
         },
@@ -98,15 +112,19 @@ async def finalize_run(
 
 
 async def fail_run(
-    *, run_id: UUID, error: str, events: list[dict[str, Any]],
-    supabase_url: str, service_role_key: str,
+    *,
+    run_id: UUID,
+    error: str,
+    events: list[dict[str, Any]],
+    supabase_url: str,
+    service_role_key: str,
     transport: httpx.AsyncBaseTransport | None = None,
 ) -> None:
     await _patch_run(
         run_id=run_id,
         body={
             "status": "failed",
-            "completed_at": datetime.now(timezone.utc).isoformat(),
+            "completed_at": datetime.now(UTC).isoformat(),
             "error": error[:1000],
             "events": events,
         },

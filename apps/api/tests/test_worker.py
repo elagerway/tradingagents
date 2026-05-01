@@ -1,9 +1,10 @@
 """Tests for the async worker that runs an engine instance and feeds the bus."""
+
 import asyncio
 
 import pytest
 
-from api.bus import Bus, SENTINEL
+from api.bus import SENTINEL, Bus
 from api.engine import SSEPublisher
 from api.worker import run_engine
 from tests.fakes.fake_engine import FakeTradingAgentsGraph

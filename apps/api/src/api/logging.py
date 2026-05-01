@@ -1,4 +1,5 @@
 """Structlog-based JSON logging configured once at app start."""
+
 import logging
 import sys
 

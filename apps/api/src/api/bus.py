@@ -1,4 +1,5 @@
 """In-process pub/sub bus with ring-buffered replay for SSE reconnect."""
+
 from __future__ import annotations
 
 import asyncio

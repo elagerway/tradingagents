@@ -5,12 +5,15 @@ The `decode_user_token` callable picks the right path based on the JWT's
 header `alg` field. Project Settings -> API -> JWT Settings tells you which
 your project uses.
 """
+
 from __future__ import annotations
 
-import jwt
-from fastapi import HTTPException, status
-from jwt import PyJWKClient
+from typing import Annotated
 from uuid import UUID
+
+import jwt
+from fastapi import Header, HTTPException, status
+from jwt import PyJWKClient
 
 from api.settings import get_settings
 
@@ -51,13 +54,17 @@ def decode_user_token(token: str, *, hs256_secret: str | None = None) -> UUID:
                     detail="HS256 secret not configured",
                 )
             payload = jwt.decode(
-                token, hs256_secret, algorithms=["HS256"],
+                token,
+                hs256_secret,
+                algorithms=["HS256"],
                 audience="authenticated",
             )
         elif alg in ("ES256", "RS256"):
             signing_key = _get_jwks_client().get_signing_key_from_jwt(token)
             payload = jwt.decode(
-                token, signing_key.key, algorithms=[alg],
+                token,
+                signing_key.key,
+                algorithms=[alg],
                 audience="authenticated",
             )
         else:
@@ -80,10 +87,6 @@ def decode_user_token(token: str, *, hs256_secret: str | None = None) -> UUID:
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=f"Invalid token: {exc}",
         ) from exc
-
-
-from fastapi import Header
-from typing import Annotated
 
 
 def current_user_id(

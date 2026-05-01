@@ -1,20 +1,26 @@
 """Tests for JWT verification."""
+
 import time
 from uuid import UUID
 
 import jwt
 import pytest
-from fastapi import HTTPException
+from fastapi import FastAPI, HTTPException
+from fastapi.testclient import TestClient
 
 from api.auth import decode_user_token
-
 
 HS256_SECRET = "test-secret-do-not-use-in-prod"
 SUB_UUID = "11111111-2222-3333-4444-555555555555"
 
 
-def make_token(*, sub: str = SUB_UUID, exp_offset: int = 3600,
-               aud: str = "authenticated", role: str = "authenticated") -> str:
+def make_token(
+    *,
+    sub: str = SUB_UUID,
+    exp_offset: int = 3600,
+    aud: str = "authenticated",
+    role: str = "authenticated",
+) -> str:
     payload = {
         "sub": sub,
         "aud": aud,
@@ -51,17 +57,11 @@ def test_malformed_token_raises_401():
     assert exc.value.status_code == 401
 
 
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
-
-from api.auth import current_user_id
-
-
 def _build_app(secret: str):
     app = FastAPI()
 
     @app.get("/whoami")
-    async def whoami(user_id=current_user_id_dep(secret)):
+    async def whoami(user_id=current_user_id_dep(secret)):  # noqa: B008
         return {"user_id": str(user_id)}
 
     return app
@@ -74,6 +74,7 @@ def current_user_id_dep(secret):
     def _dep(authorization: str | None = Header(default=None)):
         if not authorization or not authorization.startswith("Bearer "):
             from fastapi import HTTPException
+
             raise HTTPException(status_code=401, detail="Missing bearer")
         token = authorization.removeprefix("Bearer ")
         return decode_user_token(token, hs256_secret=secret)

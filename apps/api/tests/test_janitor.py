@@ -1,6 +1,7 @@
 """Tests for the janitor that sweeps stuck runs."""
+
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import httpx
 
@@ -11,16 +12,21 @@ async def test_sweep_marks_old_running_rows_as_failed():
     captured = {"calls": []}
 
     def handler(request: httpx.Request) -> httpx.Response:
-        captured["calls"].append({
-            "method": request.method,
-            "url": str(request.url),
-            "body": json.loads(request.content) if request.content else None,
-        })
+        captured["calls"].append(
+            {
+                "method": request.method,
+                "url": str(request.url),
+                "body": json.loads(request.content) if request.content else None,
+            }
+        )
         if request.method == "GET":
-            old = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
-            return httpx.Response(200, json=[
-                {"id": "00000000-0000-0000-0000-000000000aaa", "started_at": old},
-            ])
+            old = (datetime.now(UTC) - timedelta(hours=1)).isoformat()
+            return httpx.Response(
+                200,
+                json=[
+                    {"id": "00000000-0000-0000-0000-000000000aaa", "started_at": old},
+                ],
+            )
         return httpx.Response(204, json=[])
 
     transport = httpx.MockTransport(handler)

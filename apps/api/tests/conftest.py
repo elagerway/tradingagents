@@ -1,9 +1,9 @@
 """Shared fixtures for FastAPI integration tests."""
+
 import time
 
 import jwt
 import pytest
-
 
 HS256_SECRET = "test-secret-do-not-use-in-prod"
 DEFAULT_USER_ID = "11111111-2222-3333-4444-555555555555"

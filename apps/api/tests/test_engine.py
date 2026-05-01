@@ -1,4 +1,5 @@
 """Tests for the LangChain callback adapter that publishes SSE events."""
+
 from uuid import uuid4
 
 from api.bus import Bus
@@ -46,7 +47,10 @@ def test_on_chat_model_start_emits_agent_thinking_keepalive():
     bus = Bus()
     publisher = SSEPublisher(bus=bus, run_id="run-1", verbose=False)
     publisher.on_chat_model_start(
-        serialized={}, messages=[], run_id=uuid4(), name="trader",
+        serialized={},
+        messages=[],
+        run_id=uuid4(),
+        name="trader",
     )
     events = bus.replay_since(0)
     assert len(events) == 1
@@ -57,13 +61,17 @@ def test_on_chat_model_start_emits_agent_thinking_keepalive():
 def test_tool_events_only_in_verbose_mode():
     bus_quiet = Bus()
     SSEPublisher(bus=bus_quiet, run_id="r", verbose=False).on_tool_start(
-        serialized={"name": "get_stock_data"}, input_str="NVDA", run_id=uuid4(),
+        serialized={"name": "get_stock_data"},
+        input_str="NVDA",
+        run_id=uuid4(),
     )
     assert bus_quiet.replay_since(0) == []  # nothing emitted
 
     bus_verbose = Bus()
     SSEPublisher(bus=bus_verbose, run_id="r", verbose=True).on_tool_start(
-        serialized={"name": "get_stock_data"}, input_str="NVDA", run_id=uuid4(),
+        serialized={"name": "get_stock_data"},
+        input_str="NVDA",
+        run_id=uuid4(),
     )
     events = bus_verbose.replay_since(0)
     assert len(events) == 1
