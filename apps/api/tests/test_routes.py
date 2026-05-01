@@ -116,3 +116,49 @@ def test_stream_replays_with_last_event_id(app, auth_header):
 
     bus.close()
     registry.drop(RUN_ID)
+
+
+def test_make_engine_factory_real_path_uses_subclass(monkeypatch):
+    """When USE_FAKE_ENGINE=0, the factory should construct
+    TradingAgentsGraphWithApiKey with config including api_key."""
+    monkeypatch.setenv("USE_FAKE_ENGINE", "0")
+    monkeypatch.setenv("SUPABASE_URL", "http://test.local")
+    monkeypatch.setenv("SUPABASE_SERVICE_ROLE_KEY", "srv")
+
+    from api.settings import get_settings
+
+    get_settings.cache_clear()
+
+    from unittest.mock import patch
+
+    from api.routes import _make_engine_factory
+
+    captured: dict = {}
+
+    def fake_constructor(*args, **kwargs):
+        captured["args"] = args
+        captured["kwargs"] = kwargs
+
+        class Stub:
+            def propagate(self, ticker, date):
+                return ({"ticker": ticker}, "BUY")
+
+        return Stub()
+
+    with patch("api.real_engine.TradingAgentsGraphWithApiKey", fake_constructor):
+        factory = _make_engine_factory(
+            callbacks=[],
+            fake=False,
+            env={"openai": "sk-test-secret"},
+            run_config={"llm_provider": "openai"},
+        )
+        engine = factory()
+
+    assert engine is not None
+    config = captured["kwargs"]["config"]
+    assert config["api_key"] == "sk-test-secret"
+    assert config["llm_provider"] == "openai"
+    assert "deep_think_llm" in config
+    assert "quick_think_llm" in config
+    assert config["results_dir"].startswith("/tmp/")
+    assert config["data_cache_dir"].startswith("/tmp/")

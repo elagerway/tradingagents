@@ -13,6 +13,7 @@ dependencies = [
     "pydantic-settings>=2.5",
     "structlog>=24.4",
     "langchain-core>=0.3",
+    "tradingagents",
 ]
 
 [dependency-groups]
@@ -34,6 +35,9 @@ packages = ["src/api"]
 asyncio_mode = "auto"
 pythonpath = ["src"]
 testpaths = ["tests"]
+markers = [
+    "real_engine: marks tests that call the real TradingAgentsGraph and incur LLM cost (deselect with -m 'not real_engine')",
+]
 
 [tool.ruff]
 line-length = 100
@@ -41,3 +45,6 @@ target-version = "py313"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP"]
+
+[tool.uv.sources]
+tradingagents = { path = "../../", editable = true }
