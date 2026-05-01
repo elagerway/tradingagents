@@ -162,3 +162,50 @@ def test_make_engine_factory_real_path_uses_subclass(monkeypatch):
     assert "quick_think_llm" in config
     assert config["results_dir"].startswith("/tmp/")
     assert config["data_cache_dir"].startswith("/tmp/")
+
+
+def test_make_engine_factory_real_path_threads_user_id_to_memory(monkeypatch):
+    """Real engine path must construct a TradingAgentsGraph instance with
+    SupabaseMemoryLog (user-scoped) replacing the default file-based one."""
+    monkeypatch.setenv("USE_FAKE_ENGINE", "0")
+    monkeypatch.setenv("SUPABASE_URL", "http://test.local")
+    monkeypatch.setenv("SUPABASE_SERVICE_ROLE_KEY", "srv")
+
+    from api.settings import get_settings
+    get_settings.cache_clear()
+
+    from unittest.mock import patch
+    from uuid import UUID
+
+    from api.routes import _make_engine_factory
+
+    captured = {}
+
+    def fake_constructor(*args, **kwargs):
+        captured["kwargs"] = kwargs
+
+        class Stub:
+            def __init__(self):
+                self.memory_log = None
+            def propagate(self, *a, **kw):
+                return ({}, "BUY")
+
+        return Stub()
+
+    test_user_id = UUID("11111111-2222-3333-4444-555555555555")
+
+    with patch("api.real_engine.TradingAgentsGraphWithUserContext", fake_constructor):
+        factory = _make_engine_factory(
+            callbacks=[],
+            fake=False,
+            env={"openai": "sk-test-secret"},
+            run_config={"llm_provider": "openai"},
+            user_id=test_user_id,
+            run_id=None,
+        )
+        engine = factory()
+
+    kwargs = captured["kwargs"]
+    assert kwargs["user_id"] == test_user_id
+    assert kwargs["supabase_url"] == "http://test.local"
+    assert kwargs["service_role_key"] == "srv"
