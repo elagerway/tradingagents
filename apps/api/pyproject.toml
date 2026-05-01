@@ -35,6 +35,9 @@ packages = ["src/api"]
 asyncio_mode = "auto"
 pythonpath = ["src"]
 testpaths = ["tests"]
+markers = [
+    "real_engine: marks tests that call the real TradingAgentsGraph and incur LLM cost (deselect with -m 'not real_engine')",
+]
 
 [tool.ruff]
 line-length = 100

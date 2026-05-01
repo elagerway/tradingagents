@@ -36,3 +36,21 @@ def test_user_id() -> str:
 @pytest.fixture
 def auth_header() -> dict[str, str]:
     return {"Authorization": f"Bearer {make_test_token()}"}
+
+
+def pytest_addoption(parser):
+    parser.addoption(
+        "--run-real-engine",
+        action="store_true",
+        default=False,
+        help="Run tests marked @pytest.mark.real_engine (calls real LLMs, costs money)",
+    )
+
+
+def pytest_collection_modifyitems(config, items):
+    if config.getoption("--run-real-engine"):
+        return
+    skip_real = pytest.mark.skip(reason="pass --run-real-engine to run")
+    for item in items:
+        if item.get_closest_marker("real_engine"):
+            item.add_marker(skip_real)
