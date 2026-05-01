@@ -1,6 +1,7 @@
+import Link from "next/link";
 import { createRun } from "@/app/actions/runs";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -11,6 +12,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { createClient } from "@/lib/supabase/server";
 
 const PROVIDERS = [
   "openai",
@@ -30,6 +32,46 @@ export default async function NewRunPage({
 }) {
   const params = await searchParams;
   const today = new Date().toISOString().slice(0, 10);
+
+  const supabase = await createClient();
+  const { count: keyCount } = await supabase
+    .from("api_keys")
+    .select("provider", { count: "exact", head: true });
+
+  if (!keyCount) {
+    return (
+      <div
+        className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="no-keys-title"
+      >
+        <Card className="w-full max-w-md">
+          <CardHeader>
+            <CardTitle id="no-keys-title">Add an LLM key first</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              You need at least one provider key (OpenAI, Anthropic, DeepSeek,
+              etc.) before you can start a run. Hedgentic uses your own keys —
+              we never store anything plaintext.
+            </p>
+            <div className="flex gap-2">
+              <Link href="/settings" className={buttonVariants()}>
+                Go to Settings
+              </Link>
+              <Link
+                href="/"
+                className={buttonVariants({ variant: "outline" })}
+              >
+                Back to runs
+              </Link>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
