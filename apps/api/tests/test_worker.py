@@ -11,6 +11,8 @@ from api.worker import run_engine
 
 
 async def test_run_engine_completes_and_closes_bus():
+    from datetime import date
+
     bus = Bus()
     publisher = SSEPublisher(bus=bus, run_id="r-happy", verbose=False)
 
@@ -21,7 +23,7 @@ async def test_run_engine_completes_and_closes_bus():
     final_state, decision = await run_engine(
         make_engine=make_engine,
         ticker="NVDA",
-        trade_date="2026-01-15",
+        trade_date=date.today().isoformat(),
         bus=bus,
     )
 
@@ -63,3 +65,45 @@ async def test_run_engine_failure_closes_bus_and_publishes_error():
         seen_types.append(event.data["type"])
     assert "run_failed" in seen_types
     assert bus.closed
+
+
+async def test_run_engine_resolves_backdated_run_outcome():
+    """After a successful run with trade_date in the past, the worker
+    computes the realized return + reflection and resolves the pending
+    memory entry."""
+    from datetime import date, timedelta
+    from unittest.mock import MagicMock, patch
+
+    bus = Bus()
+    publisher = SSEPublisher(bus=bus, run_id="r-backdated", verbose=False)
+
+    fake_engine = FakeTradingAgentsGraph(callbacks=[publisher])
+    # Attach a mock memory_log
+    fake_engine.memory_log = MagicMock()
+
+    def make_engine():
+        return fake_engine
+
+    backdated = (date.today() - timedelta(days=14)).isoformat()
+
+    with (
+        patch("api.outcomes.compute_realized_return") as mock_compute,
+        patch("api.worker._reflect") as mock_reflect,
+    ):
+        mock_compute.return_value = (0.04, 0.02, 5)
+        mock_reflect.return_value = "BUY was right; momentum thesis held."
+
+        await run_engine(
+            make_engine=make_engine,
+            ticker="NVDA",
+            trade_date=backdated,
+            bus=bus,
+        )
+
+    fake_engine.memory_log.update_with_outcome.assert_called_once()
+    kwargs = fake_engine.memory_log.update_with_outcome.call_args.kwargs
+    assert kwargs["ticker"] == "NVDA"
+    assert kwargs["raw_return"] == 0.04
+    assert kwargs["alpha_return"] == 0.02
+    assert kwargs["holding_days"] == 5
+    assert "BUY was right" in kwargs["reflection"]

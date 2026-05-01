@@ -33,6 +33,8 @@ def _make_engine_factory(
     fake: bool,
     env: dict[str, str],
     run_config: dict | None = None,
+    user_id: UUID | None = None,
+    run_id: UUID | None = None,
 ):
     """Returns a callable that constructs an engine instance with our
     callback wired in. The fake variant is used in tests + Plan 2-3 deploys;
@@ -46,14 +48,17 @@ def _make_engine_factory(
     # Real engine path
     from tradingagents.default_config import DEFAULT_CONFIG
 
-    from api.real_engine import TradingAgentsGraphWithApiKey
+    from api.real_engine import TradingAgentsGraphWithUserContext
 
     rc = run_config or {}
     provider = rc.get("llm_provider", "openai")
     api_key = env.get(provider)
     if not api_key:
         raise RuntimeError(f"No BYO key loaded for provider: {provider}")
+    if user_id is None:
+        raise RuntimeError("user_id is required for real-engine factory")
 
+    settings = get_settings()
     engine_config = {
         **DEFAULT_CONFIG,
         **rc,
@@ -69,13 +74,18 @@ def _make_engine_factory(
         deep_think_llm=engine_config.get("deep_think_llm"),
         quick_think_llm=engine_config.get("quick_think_llm"),
         max_debate_rounds=engine_config.get("max_debate_rounds"),
+        user_id=str(user_id),
     )
 
-    return lambda: TradingAgentsGraphWithApiKey(
+    return lambda: TradingAgentsGraphWithUserContext(
         selected_analysts=["market", "social", "news", "fundamentals"],
         debug=False,
         config=engine_config,
         callbacks=callbacks,
+        user_id=user_id,
+        run_id=run_id,
+        supabase_url=settings.supabase_url,
+        service_role_key=settings.supabase_service_role_key,
     )
 
 
@@ -125,6 +135,8 @@ async def start_run(
         fake=settings.use_fake_engine,
         env=env_keys,
         run_config=run.get("config") or {},
+        user_id=user_id,
+        run_id=run_id,
     )
 
     # 4. Kick off the run as a background task
