@@ -82,3 +82,33 @@ def test_stream_404_when_run_not_in_registry(app, auth_header):
     r = client.get(f"/runs/00000000-0000-0000-0000-000000000fff/stream",
                    headers=auth_header)
     assert r.status_code == 404
+
+
+def test_stream_replays_with_last_event_id(app, auth_header):
+    client = TestClient(app)
+
+    from api.bus import registry
+    bus = registry.get_or_create(RUN_ID)
+    bus.publish({"type": "a", "n": 1})
+    bus.publish({"type": "b", "n": 2})
+    bus.publish({"type": "c", "n": 3})
+
+    # Close the bus so the stream terminates after replay
+    bus.close()
+
+    headers = {
+        **auth_header,
+        "accept": "text/event-stream",
+        "Last-Event-ID": "1",   # we already saw event id=1
+    }
+    r = client.get(f"/runs/{RUN_ID}/stream", headers=headers)
+    assert r.status_code == 200
+    body = r.text
+
+    # Should contain events 2 and 3 but not 1
+    assert "\"n\": 2" in body
+    assert "\"n\": 3" in body
+    assert "\"n\": 1" not in body
+
+    bus.close()
+    registry.drop(RUN_ID)
