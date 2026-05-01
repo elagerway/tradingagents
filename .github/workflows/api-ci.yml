@@ -43,3 +43,65 @@ jobs:
           SUPABASE_JWT_SECRET: test-secret-do-not-use-in-prod
           USE_FAKE_ENGINE: "1"
         run: uv run pytest -v
+
+  deploy:
+    name: Deploy to Render
+    runs-on: ubuntu-latest
+    needs: pytest
+    # Only deploy on push to main (not PRs). Skip if pytest didn't run on this event.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    env:
+      RENDER_WEB_SERVICE_ID: srv-d7qf2g4m0tmc73eli8m0
+      RENDER_CRON_SERVICE_ID: crn-d7qf2id7vvec73da5ugg
+    steps:
+      - name: Trigger Render web service deploy
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+        run: |
+          set -euo pipefail
+          DEPLOY_ID=$(curl -fsSL -X POST \
+            -H "Authorization: Bearer $RENDER_API_KEY" \
+            -H "Content-Type: application/json" \
+            -d '{"clearCache":"do_not_clear"}' \
+            "https://api.render.com/v1/services/$RENDER_WEB_SERVICE_ID/deploys" \
+            | jq -r '.id')
+          echo "Triggered web deploy: $DEPLOY_ID"
+          echo "DEPLOY_ID=$DEPLOY_ID" >> "$GITHUB_OUTPUT"
+        id: web
+
+      - name: Trigger Render cron service deploy
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+        run: |
+          set -euo pipefail
+          DEPLOY_ID=$(curl -fsSL -X POST \
+            -H "Authorization: Bearer $RENDER_API_KEY" \
+            -H "Content-Type: application/json" \
+            -d '{"clearCache":"do_not_clear"}' \
+            "https://api.render.com/v1/services/$RENDER_CRON_SERVICE_ID/deploys" \
+            | jq -r '.id')
+          echo "Triggered cron deploy: $DEPLOY_ID"
+
+      - name: Wait for web deploy to be live
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          DEPLOY_ID: ${{ steps.web.outputs.DEPLOY_ID }}
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 30); do
+            STATE=$(curl -fsSL \
+              -H "Authorization: Bearer $RENDER_API_KEY" \
+              "https://api.render.com/v1/services/$RENDER_WEB_SERVICE_ID/deploys/$DEPLOY_ID" \
+              | jq -r '.status')
+            echo "[$i/30] state=$STATE"
+            case "$STATE" in
+              live) echo "Deploy live"; exit 0 ;;
+              build_failed|update_failed|deactivated|canceled)
+                echo "Deploy failed: $STATE"
+                exit 1
+                ;;
+            esac
+            sleep 20
+          done
+          echo "Timed out waiting for live state"
+          exit 1
