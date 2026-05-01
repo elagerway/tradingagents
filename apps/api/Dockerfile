@@ -12,7 +12,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# Copy upstream tradingagents package (engine — never modified)
+# Copy upstream tradingagents package (engine — never modified).
+# The uv.lock editable path "../../" resolves from /app/apps/api to /app,
+# so the root pyproject.toml must live at /app/pyproject.toml.
+COPY pyproject.toml /app/pyproject.toml
 COPY tradingagents/ /app/tradingagents/
 
 # Copy our app
