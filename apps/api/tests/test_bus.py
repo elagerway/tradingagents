@@ -46,3 +46,20 @@ async def test_replay_since_returns_only_newer_events():
     replayed = bus.replay_since(last_event_id=1)
     assert [e.id for e in replayed] == [2, 3]
     assert [e.data["i"] for e in replayed] == [2, 3]
+
+
+async def test_close_pushes_sentinel_to_all_subscribers():
+    from api.bus import Bus, SENTINEL
+
+    bus = Bus()
+    queue_a = bus.subscribe()
+    queue_b = bus.subscribe()
+
+    bus.close()
+
+    assert (await asyncio.wait_for(queue_a.get(), timeout=0.1)) is SENTINEL
+    assert (await asyncio.wait_for(queue_b.get(), timeout=0.1)) is SENTINEL
+    assert bus.closed is True
+
+    with pytest.raises(RuntimeError, match="closed"):
+        bus.publish({"too": "late"})
