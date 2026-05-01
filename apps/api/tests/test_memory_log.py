@@ -143,3 +143,38 @@ def test_get_pending_entries_filters_to_unresolved():
     pending = log.get_pending_entries()
     assert len(pending) == 1
     assert pending[0]["ticker"] == "AAPL"
+
+
+def test_update_with_outcome_patches_row():
+    captured = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["method"] = request.method
+        captured["params"] = dict(request.url.params)
+        captured["body"] = json.loads(request.content) if request.content else None
+        return httpx.Response(204, json=[])
+
+    log = SupabaseMemoryLog(
+        config={"memory_log_path": "/tmp/ignored.md", "memory_log_max_entries": None},
+        user_id=USER_ID,
+        run_id=None,
+        supabase_url="http://test.local",
+        service_role_key="srv",
+        transport=make_transport(handler),
+    )
+    log.update_with_outcome(
+        ticker="NVDA",
+        trade_date="2026-01-15",
+        raw_return=0.042,
+        alpha_return=0.021,
+        holding_days=5,
+        reflection="BUY was right, momentum held.",
+    )
+
+    assert captured["method"] == "PATCH"
+    assert captured["params"]["user_id"] == f"eq.{USER_ID}"
+    assert captured["params"]["ticker"] == "eq.NVDA"
+    assert captured["params"]["resolved"] == "eq.false"
+    assert captured["body"]["resolved"] is True
+    assert captured["body"]["raw_return"] == 0.042
+    assert captured["body"]["reflection"].startswith("BUY")
