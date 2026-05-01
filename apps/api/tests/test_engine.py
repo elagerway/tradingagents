@@ -80,7 +80,7 @@ def test_tool_events_only_in_verbose_mode():
 
 
 def test_fake_engine_emits_full_event_sequence():
-    from tests.fakes.fake_engine import CANNED_AGENTS, FakeTradingAgentsGraph
+    from api.fakes.fake_engine import CANNED_AGENTS, FakeTradingAgentsGraph
 
     bus = Bus()
     publisher = SSEPublisher(bus=bus, run_id="r", verbose=False)

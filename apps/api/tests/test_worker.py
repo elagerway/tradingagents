@@ -7,7 +7,7 @@ import pytest
 from api.bus import SENTINEL, Bus
 from api.engine import SSEPublisher
 from api.worker import run_engine
-from tests.fakes.fake_engine import FakeTradingAgentsGraph
+from api.fakes.fake_engine import FakeTradingAgentsGraph
 
 
 async def test_run_engine_completes_and_closes_bus():

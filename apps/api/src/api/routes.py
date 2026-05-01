@@ -31,7 +31,7 @@ def _make_engine_factory(*, callbacks, fake: bool, env: dict[str, str]):
     """Returns a callable that constructs an engine instance with our
     callback wired in. Plan 4 swaps the fake for the real one."""
     if fake:
-        from tests.fakes.fake_engine import FakeTradingAgentsGraph
+        from api.fakes.fake_engine import FakeTradingAgentsGraph
 
         return lambda: FakeTradingAgentsGraph(callbacks=callbacks)
     raise NotImplementedError("real engine wiring lands in Plan 4")
