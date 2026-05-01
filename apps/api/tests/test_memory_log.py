@@ -49,3 +49,97 @@ def test_store_decision_inserts_pending_row():
     assert "BUY" in body["decision"]
     assert body["resolved"] is False
     assert "resolution=ignore-duplicates" in captured["prefer"]
+
+
+def test_load_entries_returns_parsed_dicts():
+    captured = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["params"] = dict(request.url.params)
+        return httpx.Response(
+            200,
+            json=[
+                {
+                    "trade_date": "2026-01-15",
+                    "ticker": "NVDA",
+                    "rating": "Buy",
+                    "resolved": True,
+                    "raw_return": 0.042,
+                    "alpha_return": 0.021,
+                    "holding_days": 5,
+                    "decision": "long-form PM output",
+                    "reflection": "BUY was right, momentum held.",
+                },
+                {
+                    "trade_date": "2026-01-20",
+                    "ticker": "AAPL",
+                    "rating": "Hold",
+                    "resolved": False,
+                    "raw_return": None,
+                    "alpha_return": None,
+                    "holding_days": None,
+                    "decision": "PM output",
+                    "reflection": None,
+                },
+            ],
+        )
+
+    log = SupabaseMemoryLog(
+        config={"memory_log_path": "/tmp/ignored.md", "memory_log_max_entries": None},
+        user_id=USER_ID,
+        run_id=None,
+        supabase_url="http://test.local",
+        service_role_key="srv",
+        transport=make_transport(handler),
+    )
+    entries = log.load_entries()
+
+    assert captured["params"]["user_id"] == f"eq.{USER_ID}"
+    assert len(entries) == 2
+    assert entries[0]["pending"] is False
+    assert entries[0]["raw"] == 0.042
+    assert entries[1]["pending"] is True
+    assert entries[1]["reflection"] == ""
+
+
+def test_get_pending_entries_filters_to_unresolved():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json=[
+                {
+                    "trade_date": "2026-01-15",
+                    "ticker": "NVDA",
+                    "rating": "Buy",
+                    "resolved": True,
+                    "raw_return": 0.04,
+                    "alpha_return": 0.02,
+                    "holding_days": 5,
+                    "decision": "x",
+                    "reflection": "y",
+                },
+                {
+                    "trade_date": "2026-01-20",
+                    "ticker": "AAPL",
+                    "rating": "Hold",
+                    "resolved": False,
+                    "raw_return": None,
+                    "alpha_return": None,
+                    "holding_days": None,
+                    "decision": "x",
+                    "reflection": None,
+                },
+            ],
+        )
+
+    log = SupabaseMemoryLog(
+        config={"memory_log_path": "/tmp/ignored.md", "memory_log_max_entries": None},
+        user_id=USER_ID,
+        run_id=None,
+        supabase_url="http://test.local",
+        service_role_key="srv",
+        transport=make_transport(handler),
+    )
+    pending = log.get_pending_entries()
+    assert len(pending) == 1
+    assert pending[0]["ticker"] == "AAPL"
