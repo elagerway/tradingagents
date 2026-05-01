@@ -13,6 +13,7 @@ dependencies = [
     "pydantic-settings>=2.5",
     "structlog>=24.4",
     "langchain-core>=0.3",
+    "tradingagents",
 ]
 
 [dependency-groups]
@@ -41,3 +42,6 @@ target-version = "py313"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP"]
+
+[tool.uv.sources]
+tradingagents = { path = "../../", editable = true }
