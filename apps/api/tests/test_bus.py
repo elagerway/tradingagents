@@ -35,3 +35,14 @@ async def test_buffer_evicts_old_events():
     assert len(replayed) == BUFFER_SIZE
     assert replayed[0].data["i"] == 50  # earliest 50 evicted
     assert replayed[-1].data["i"] == BUFFER_SIZE + 49
+
+
+async def test_replay_since_returns_only_newer_events():
+    bus = Bus()
+    bus.publish({"i": 1})
+    bus.publish({"i": 2})
+    bus.publish({"i": 3})
+
+    replayed = bus.replay_since(last_event_id=1)
+    assert [e.id for e in replayed] == [2, 3]
+    assert [e.data["i"] for e in replayed] == [2, 3]
