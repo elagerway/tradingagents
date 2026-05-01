@@ -2,6 +2,7 @@
 from fastapi import FastAPI
 
 from api.logging import configure_logging
+from api.routes import router as runs_router
 
 
 def create_app() -> FastAPI:
@@ -12,6 +13,7 @@ def create_app() -> FastAPI:
     async def healthz() -> dict[str, str]:
         return {"status": "ok"}
 
+    app.include_router(runs_router)
     return app
 
 

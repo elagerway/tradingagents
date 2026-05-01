@@ -87,10 +87,10 @@ from typing import Annotated
 
 
 def current_user_id(
-    authorization: Annotated[str, Header()],
+    authorization: Annotated[str | None, Header()] = None,
 ) -> UUID:
     """FastAPI dependency: returns the user UUID for the bearer token."""
-    if not authorization.startswith("Bearer "):
+    if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Missing bearer token",
