@@ -8,7 +8,7 @@ help:
 	@echo "  make db-test     - run all pgTAP tests under supabase/tests/database/"
 	@echo "  make db-status   - show local Supabase status + URLs"
 	@echo "  make api-install - install Python deps for apps/api"
-	@echo "  make api-dev     - run FastAPI dev server with reload"
+	@echo "  make api-dev     - run FastAPI dev server on :8787 with reload"
 	@echo "  make api-test    - run pytest in apps/api"
 	@echo "  make api-lint    - lint apps/api with ruff"
 	@echo "  make api-test-real - run real-engine smoke (calls real LLMs, ~\$$0.005)"
@@ -35,7 +35,7 @@ api-install:
 	cd apps/api && uv sync
 
 api-dev:
-	cd apps/api && uv run uvicorn api.main:app --reload --host 0.0.0.0 --port 8000
+	cd apps/api && uv run uvicorn api.main:app --reload --host 0.0.0.0 --port 8787
 
 api-test:
 	cd apps/api && uv run pytest -v
