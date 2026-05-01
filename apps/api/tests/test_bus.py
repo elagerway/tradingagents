@@ -63,3 +63,26 @@ async def test_close_pushes_sentinel_to_all_subscribers():
 
     with pytest.raises(RuntimeError, match="closed"):
         bus.publish({"too": "late"})
+
+
+async def test_bus_registry_returns_same_instance_per_run_id():
+    from api.bus import BusRegistry
+
+    registry = BusRegistry()
+    bus1 = registry.get_or_create("run-abc")
+    bus2 = registry.get_or_create("run-abc")
+    bus3 = registry.get_or_create("run-xyz")
+
+    assert bus1 is bus2
+    assert bus1 is not bus3
+
+
+async def test_bus_registry_drops_closed_buses():
+    from api.bus import BusRegistry
+
+    registry = BusRegistry()
+    bus = registry.get_or_create("run-abc")
+    bus.close()
+    registry.drop("run-abc")
+    new_bus = registry.get_or_create("run-abc")
+    assert new_bus is not bus
