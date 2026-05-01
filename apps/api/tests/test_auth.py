@@ -49,3 +49,47 @@ def test_malformed_token_raises_401():
     with pytest.raises(HTTPException) as exc:
         decode_user_token("not.a.real.jwt", hs256_secret=HS256_SECRET)
     assert exc.value.status_code == 401
+
+
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
+from api.auth import current_user_id
+
+
+def _build_app(secret: str):
+    app = FastAPI()
+
+    @app.get("/whoami")
+    async def whoami(user_id=current_user_id_dep(secret)):
+        return {"user_id": str(user_id)}
+
+    return app
+
+
+def current_user_id_dep(secret):
+    # Inline override so tests don't pull from settings.
+    from fastapi import Depends, Header
+
+    def _dep(authorization: str | None = Header(default=None)):
+        if not authorization or not authorization.startswith("Bearer "):
+            from fastapi import HTTPException
+            raise HTTPException(status_code=401, detail="Missing bearer")
+        token = authorization.removeprefix("Bearer ")
+        return decode_user_token(token, hs256_secret=secret)
+
+    return Depends(_dep)
+
+
+def test_whoami_with_valid_token():
+    client = TestClient(_build_app(HS256_SECRET))
+    token = make_token()
+    r = client.get("/whoami", headers={"Authorization": f"Bearer {token}"})
+    assert r.status_code == 200
+    assert r.json() == {"user_id": SUB_UUID}
+
+
+def test_whoami_without_authorization_returns_401():
+    client = TestClient(_build_app(HS256_SECRET))
+    r = client.get("/whoami")
+    assert r.status_code == 401

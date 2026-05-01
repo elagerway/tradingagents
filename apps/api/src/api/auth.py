@@ -80,3 +80,20 @@ def decode_user_token(token: str, *, hs256_secret: str | None = None) -> UUID:
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=f"Invalid token: {exc}",
         ) from exc
+
+
+from fastapi import Header
+from typing import Annotated
+
+
+def current_user_id(
+    authorization: Annotated[str, Header()],
+) -> UUID:
+    """FastAPI dependency: returns the user UUID for the bearer token."""
+    if not authorization.startswith("Bearer "):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing bearer token",
+        )
+    token = authorization.removeprefix("Bearer ")
+    return decode_user_token(token)
