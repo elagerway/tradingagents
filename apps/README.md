@@ -1,4 +1,4 @@
-# Snapsonic application code
+# Hedgentic AI — application code
 
 This directory holds the application that wraps the upstream `tradingagents`
 Python package. The upstream package (in the repo root at `tradingagents/`) is

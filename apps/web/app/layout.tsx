@@ -9,8 +9,9 @@ const inter = Inter({ subsets: ["latin"], variable: "--font-sans" });
 const mono = JetBrains_Mono({ subsets: ["latin"], variable: "--font-mono" });
 
 export const metadata: Metadata = {
-  title: "tradingagents",
-  description: "Multi-agent trading research, hosted.",
+  title: "Hedgentic AI",
+  description: "Multi-agent trading research. Hedge funds for everyone.",
+  metadataBase: new URL("https://hedgentic.ai"),
 };
 
 export default function RootLayout({

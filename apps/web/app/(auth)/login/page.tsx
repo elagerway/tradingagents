@@ -39,7 +39,7 @@ export default async function LoginPage({
     <main className="flex min-h-screen items-center justify-center p-6">
       <Card className="w-full max-w-md">
         <CardHeader>
-          <CardTitle>tradingagents</CardTitle>
+          <CardTitle>Hedgentic AI</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           {params.sent === "1" && (
