@@ -14,8 +14,9 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
-lib64/
+# Python sdist `lib/` and `lib64/` — but allow apps/web/lib (Next.js source)
+/lib/
+/lib64/
 parts/
 sdist/
 var/
@@ -239,3 +240,4 @@ apps/web/.env*.local
 
 # Claude Code local config
 .claude/
+.vercel

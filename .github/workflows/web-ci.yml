@@ -1,0 +1,51 @@
+name: Web CI
+
+on:
+  pull_request:
+    paths:
+      - 'apps/web/**'
+      - '.github/workflows/web-ci.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'apps/web/**'
+
+jobs:
+  build:
+    name: Type-check + build (apps/web)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'pnpm'
+          cache-dependency-path: 'apps/web/pnpm-lock.yaml'
+
+      - name: Install
+        working-directory: apps/web
+        run: pnpm install --frozen-lockfile
+
+      - name: Type-check
+        working-directory: apps/web
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: http://example.invalid
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: fake
+          NEXT_PUBLIC_RENDER_API_BASE_URL: http://example.invalid
+          NEXT_PUBLIC_APP_URL: http://example.invalid
+        run: pnpm tsc --noEmit
+
+      - name: Build
+        working-directory: apps/web
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: http://example.invalid
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: fake
+          NEXT_PUBLIC_RENDER_API_BASE_URL: http://example.invalid
+          NEXT_PUBLIC_APP_URL: http://example.invalid
+        run: pnpm build

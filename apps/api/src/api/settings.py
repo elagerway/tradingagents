@@ -19,6 +19,12 @@ class Settings(BaseSettings):
     supabase_service_role_key: str = Field(..., description="Service role key (secret)")
     supabase_jwt_secret: str = Field("", description="HS256 secret if project uses legacy auth")
 
+    # CORS — comma-separated origins for the web app.
+    cors_origins: str = Field(
+        "http://localhost:3000",
+        description="Comma-separated list of allowed origins for CORS",
+    )
+
     # Engine
     use_fake_engine: bool = Field(True, description="Plan 2 ships with fake; Plan 4 flips this")
 
