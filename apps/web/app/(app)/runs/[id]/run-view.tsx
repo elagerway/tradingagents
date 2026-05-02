@@ -127,15 +127,23 @@ export function RunView({ run }: { run: Run }) {
         data: { session },
       } = await supabase.auth.getSession();
       if (!session || cancelled) return;
-      await fetch(`${env.RENDER_API_BASE_URL}/runs/${run.id}/start`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${session.access_token}` },
-      });
+      const res = await fetch(
+        `${env.RENDER_API_BASE_URL}/runs/${run.id}/start`,
+        {
+          method: "POST",
+          headers: { Authorization: `Bearer ${session.access_token}` },
+        },
+      );
+      if (cancelled || !res.ok) return;
+      // The API has flipped the row from "pending" to "running" and started
+      // emitting events to the bus. Re-fetch the server component so React
+      // sees status="running" and the EventStreamConsumer below mounts.
+      router.refresh();
     })();
     return () => {
       cancelled = true;
     };
-  }, [run.id, run.status]);
+  }, [run.id, run.status, router]);
 
   const decision =
     typeof run.final_decision === "object" && run.final_decision

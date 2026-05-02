@@ -55,8 +55,12 @@ class Bus:
         return event
 
     def replay_since(self, last_event_id: int | None) -> list[BusEvent]:
-        if last_event_id is None:
-            return []
+        # No Last-Event-ID = first connection, replay the full buffer so the
+        # consumer doesn't miss events that were already in flight when its
+        # subscribe() landed. Subsequent reconnects send the last event id
+        # they saw and only get the delta.
+        if last_event_id is None or last_event_id < 1:
+            return list(self._buffer)
         return [e for e in self._buffer if e.id > last_event_id]
 
     def snapshot(self) -> list[dict[str, Any]]:

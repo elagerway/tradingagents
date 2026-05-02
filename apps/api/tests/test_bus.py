@@ -108,6 +108,22 @@ async def test_snapshot_returns_emitted_payloads_in_order():
     ]
 
 
+async def test_replay_since_none_returns_full_buffer():
+    """Regression: a fresh SSE connection has no Last-Event-ID. Returning
+    [] would lose events emitted between bus creation and first subscribe
+    (e.g. between POST /start succeeding and the browser connecting to
+    /stream). None must mean "from the start"."""
+    bus = Bus()
+    bus.publish({"type": "agent_started", "agent": "market_analyst"})
+    bus.publish({"type": "agent_completed", "agent": "market_analyst"})
+
+    replayed = bus.replay_since(last_event_id=None)
+    assert [e.data for e in replayed] == [
+        {"type": "agent_started", "agent": "market_analyst"},
+        {"type": "agent_completed", "agent": "market_analyst"},
+    ]
+
+
 async def test_snapshot_drops_oldest_when_buffer_full():
     """Snapshot uses the same ring buffer as replay, so once it overflows
     the oldest events are gone. Documented limitation — verify the
