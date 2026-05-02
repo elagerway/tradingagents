@@ -1,29 +1,9 @@
 import Link from "next/link";
-import { createRun } from "@/app/actions/runs";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { NewRunForm } from "@/components/new-run-form";
 import { createClient } from "@/lib/supabase/server";
-
-const PROVIDERS = [
-  "openai",
-  "anthropic",
-  "google",
-  "xai",
-  "deepseek",
-  "dashscope",
-  "zhipu",
-  "openrouter",
-];
 
 export default async function NewRunPage({
   searchParams,
@@ -97,45 +77,7 @@ export default async function NewRunPage({
             </Alert>
           )}
 
-          <form action={createRun} className="space-y-4">
-            <div className="space-y-1">
-              <Label htmlFor="ticker">Ticker</Label>
-              <Input
-                id="ticker"
-                name="ticker"
-                required
-                placeholder="NVDA"
-                maxLength={10}
-                style={{ textTransform: "uppercase" }}
-              />
-            </div>
-            <div className="space-y-1">
-              <Label htmlFor="trade_date">Trade date</Label>
-              <Input
-                id="trade_date"
-                name="trade_date"
-                type="date"
-                required
-                defaultValue={today}
-              />
-            </div>
-            <div className="space-y-1">
-              <Label>LLM provider</Label>
-              <Select name="llm_provider" defaultValue="openai">
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {PROVIDERS.map((p) => (
-                    <SelectItem key={p} value={p}>
-                      {p}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <Button type="submit">Start run</Button>
-          </form>
+          <NewRunForm today={today} />
         </CardContent>
       </Card>
     </div>
