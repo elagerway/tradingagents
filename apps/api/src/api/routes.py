@@ -218,7 +218,6 @@ async def start_run(
 
     # 4. Kick off the run as a background task
     async def _drive():
-        events_for_persist: list[dict[str, Any]] = []
         try:
             final_state, decision = await run_engine(
                 make_engine=factory,
@@ -229,7 +228,7 @@ async def start_run(
             await finalize_run(
                 run_id=run_id,
                 decision=decision,
-                events=events_for_persist,
+                events=bus.snapshot(),
                 final_state_keys=list(final_state.keys()),
                 supabase_url=settings.supabase_url,
                 service_role_key=settings.supabase_service_role_key,
@@ -238,7 +237,7 @@ async def start_run(
             await fail_run(
                 run_id=run_id,
                 error=str(exc),
-                events=events_for_persist,
+                events=bus.snapshot(),
                 supabase_url=settings.supabase_url,
                 service_role_key=settings.supabase_service_role_key,
             )

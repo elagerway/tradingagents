@@ -7,7 +7,7 @@ from collections import deque
 from dataclasses import dataclass
 from typing import Any
 
-BUFFER_SIZE = 200
+BUFFER_SIZE = 1000
 QUEUE_MAX_SIZE = 512
 SENTINEL: Any = object()
 
@@ -58,6 +58,16 @@ class Bus:
         if last_event_id is None:
             return []
         return [e for e in self._buffer if e.id > last_event_id]
+
+    def snapshot(self) -> list[dict[str, Any]]:
+        """Return all currently-buffered event payloads as a list of dicts.
+
+        Used at run finalize to persist the SSE event log onto the runs row
+        so that re-loading the run detail page can replay agent activity
+        without re-streaming. Bounded by BUFFER_SIZE — verbose runs that
+        emit more than that lose their oldest events.
+        """
+        return [e.data for e in self._buffer]
 
     def close(self) -> None:
         self._closed = True

@@ -87,3 +87,38 @@ async def test_bus_registry_drops_closed_buses():
     registry.drop("run-abc")
     new_bus = registry.get_or_create("run-abc")
     assert new_bus is not bus
+
+
+async def test_snapshot_returns_emitted_payloads_in_order():
+    """Regression: routes._drive used to pass an empty list to
+    finalize_run, leaving runs.events = [] in the DB even after a
+    successful run. Now it calls bus.snapshot() — verify the snapshot
+    includes everything that was published, in order, as plain dicts.
+    """
+    bus = Bus()
+    bus.publish({"type": "agent_started", "agent": "market_analyst"})
+    bus.publish({"type": "tool_called", "tool": "get_news"})
+    bus.publish({"type": "agent_completed", "agent": "market_analyst"})
+
+    snapshot = bus.snapshot()
+    assert snapshot == [
+        {"type": "agent_started", "agent": "market_analyst"},
+        {"type": "tool_called", "tool": "get_news"},
+        {"type": "agent_completed", "agent": "market_analyst"},
+    ]
+
+
+async def test_snapshot_drops_oldest_when_buffer_full():
+    """Snapshot uses the same ring buffer as replay, so once it overflows
+    the oldest events are gone. Documented limitation — verify the
+    surviving slice is the most recent BUFFER_SIZE events."""
+    from api.bus import BUFFER_SIZE, Bus
+
+    bus = Bus()
+    for i in range(BUFFER_SIZE + 5):
+        bus.publish({"type": "tick", "n": i})
+
+    snapshot = bus.snapshot()
+    assert len(snapshot) == BUFFER_SIZE
+    assert snapshot[0] == {"type": "tick", "n": 5}
+    assert snapshot[-1] == {"type": "tick", "n": BUFFER_SIZE + 4}
