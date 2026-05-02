@@ -35,7 +35,8 @@ class TradingAgentsGraphWithApiKey(TradingAgentsGraph):
 
 class TradingAgentsGraphWithUserContext(TradingAgentsGraphWithApiKey):
     """Engine that replaces the local-file memory_log with a per-user
-    Supabase-backed one.
+    Supabase-backed one and wires our callbacks into graph.invoke so the
+    SSEPublisher receives per-node lifecycle events.
 
     The upstream's __init__ instantiates `self.memory_log = TradingMemoryLog(...)`.
     We let super().__init__ run normally, then reassign `self.memory_log` to
@@ -59,3 +60,28 @@ class TradingAgentsGraphWithUserContext(TradingAgentsGraphWithApiKey):
             supabase_url=supabase_url,
             service_role_key=service_role_key,
         )
+
+    def propagate(self, ticker: str, trade_date: str):
+        """Inject our callbacks into the propagator's graph args so that
+        compiled-graph node lifecycle events (on_chain_start/end with the
+        node's actual name like "Market Analyst") flow into the SSEPublisher.
+
+        Without this, callbacks attach only to the LLM clients (via the
+        upstream's `__init__`) and on_chain_start fires with name=None, so
+        the publisher can't tell which agent is running.
+        """
+        if not self.callbacks:
+            return super().propagate(ticker, trade_date)
+
+        original_get_args = self.propagator.get_graph_args
+        cbs = self.callbacks
+
+        def get_args_with_callbacks(callbacks=None):
+            merged = list(callbacks or []) + list(cbs)
+            return original_get_args(callbacks=merged)
+
+        self.propagator.get_graph_args = get_args_with_callbacks
+        try:
+            return super().propagate(ticker, trade_date)
+        finally:
+            self.propagator.get_graph_args = original_get_args

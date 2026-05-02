@@ -22,8 +22,40 @@ def _truncate(text: str, limit: int = SUMMARY_LIMIT) -> str:
     return text[: limit - 1] + "…"
 
 
-def _agent_name(name: str | None, serialized: dict[str, Any] | None) -> str:
-    return name or (serialized or {}).get("name") or "unknown"
+# LangGraph node names → our snake_case agent keys used by the web UI.
+# The engine's setup.py adds nodes with display-cased names like
+# "Market Analyst" / "Research Manager"; the web AGENTS array uses
+# "market_analyst" / "research_manager". Normalize at publish time.
+_NODE_TO_AGENT_KEY: dict[str, str] = {
+    "Market Analyst": "market_analyst",
+    "Social Analyst": "social_analyst",
+    "News Analyst": "news_analyst",
+    "Fundamentals Analyst": "fundamentals_analyst",
+    "Bull Researcher": "bull_researcher",
+    "Bear Researcher": "bear_researcher",
+    "Research Manager": "research_manager",
+    "Trader": "trader",
+    "Aggressive Analyst": "aggressive_analyst",
+    "Neutral Analyst": "neutral_analyst",
+    "Conservative Analyst": "conservative_analyst",
+    "Portfolio Manager": "portfolio_manager",
+}
+
+# Agents the web UI renders as cards. Other LangGraph nodes (router chains,
+# clear_messages helpers, the top-level graph) emit events that we suppress
+# so the timeline doesn't fill up with noise the user can't act on.
+_RENDERED_AGENTS: frozenset[str] = frozenset(_NODE_TO_AGENT_KEY.values())
+
+
+def _agent_name(name: str | None, serialized: dict[str, Any] | None) -> str | None:
+    raw = name or (serialized or {}).get("name") or ""
+    if not raw:
+        return None
+    if raw in _NODE_TO_AGENT_KEY:
+        return _NODE_TO_AGENT_KEY[raw]
+    # Fall back to slugifying — keeps the event readable when the engine
+    # adds a new node we haven't mapped yet.
+    return raw.lower().replace(" ", "_")
 
 
 class SSEPublisher(BaseCallbackHandler):
@@ -45,10 +77,14 @@ class SSEPublisher(BaseCallbackHandler):
         self, serialized, inputs, *, run_id: UUID, name: str | None = None, **kwargs
     ) -> None:
         agent = _agent_name(name, serialized)
+        if agent not in _RENDERED_AGENTS:
+            return
         self.bus.publish({"type": "agent_started", "agent": agent})
 
     def on_chain_end(self, outputs, *, run_id: UUID, name: str | None = None, **kwargs) -> None:
         agent = _agent_name(name, None)
+        if agent not in _RENDERED_AGENTS:
+            return
         # Pull the report text out of outputs if present
         summary_text = ""
         if isinstance(outputs, dict):
@@ -69,6 +105,8 @@ class SSEPublisher(BaseCallbackHandler):
 
     def on_chain_error(self, error, *, run_id: UUID, name: str | None = None, **kwargs) -> None:
         agent = _agent_name(name, None)
+        if agent not in _RENDERED_AGENTS:
+            return
         self.bus.publish(
             {
                 "type": "agent_error",
@@ -82,8 +120,11 @@ class SSEPublisher(BaseCallbackHandler):
     def on_chat_model_start(
         self, serialized, messages, *, run_id: UUID, name: str | None = None, **kwargs
     ) -> None:
-        agent = _agent_name(name, serialized)
-        self.bus.publish({"type": "agent_thinking", "agent": agent})
+        # LLM invocations don't carry a node name from LangGraph, so we'd
+        # have to publish agent_thinking with an empty/unknown agent which
+        # the client can't route. on_chain_start already signals "agent
+        # active" for each rendered node — that's enough.
+        return
 
     # --- tool events (verbose only) -------------------------------------
 

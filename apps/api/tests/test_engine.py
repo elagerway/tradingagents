@@ -43,7 +43,10 @@ def test_on_chain_end_publishes_agent_completed_with_summary():
     assert len(e["summary"]) <= 500  # adapter truncates
 
 
-def test_on_chat_model_start_emits_agent_thinking_keepalive():
+def test_on_chat_model_start_does_not_emit():
+    """LangGraph LLM invocations don't carry the parent node's name, so
+    on_chat_model_start can't reliably tag the active agent. on_chain_start
+    already fires for each node — that's the source of truth."""
     bus = Bus()
     publisher = SSEPublisher(bus=bus, run_id="run-1", verbose=False)
     publisher.on_chat_model_start(
@@ -52,10 +55,50 @@ def test_on_chat_model_start_emits_agent_thinking_keepalive():
         run_id=uuid4(),
         name="trader",
     )
+    assert bus.replay_since(0) == []
+
+
+def test_chain_start_normalizes_display_case_node_name():
+    """LangGraph nodes are added with display names ("Market Analyst").
+    The publisher must normalize them to the snake_case keys the web
+    AGENTS array uses."""
+    bus = Bus()
+    publisher = SSEPublisher(bus=bus, run_id="run-1", verbose=False)
+
+    publisher.on_chain_start(
+        serialized={},
+        inputs={},
+        run_id=uuid4(),
+        name="Market Analyst",
+    )
     events = bus.replay_since(0)
     assert len(events) == 1
-    assert events[0].data["type"] == "agent_thinking"
-    assert events[0].data["agent"] == "trader"
+    assert events[0].data == {"type": "agent_started", "agent": "market_analyst"}
+
+
+def test_chain_start_filters_non_rendered_nodes():
+    """LangGraph fires on_chain_start for many things (top-level graph,
+    inner runnables, helper nodes) — only emit events for nodes the web
+    UI actually renders as cards, otherwise the timeline floods with
+    noise the user can't act on."""
+    bus = Bus()
+    publisher = SSEPublisher(bus=bus, run_id="run-1", verbose=False)
+
+    # The top-level graph runnable typically fires with name="LangGraph".
+    publisher.on_chain_start(
+        serialized={},
+        inputs={},
+        run_id=uuid4(),
+        name="LangGraph",
+    )
+    # Helper nodes added by the engine but not surfaced as cards.
+    publisher.on_chain_start(
+        serialized={},
+        inputs={},
+        run_id=uuid4(),
+        name="Msg Clear Market",
+    )
+    assert bus.replay_since(0) == []
 
 
 def test_tool_events_only_in_verbose_mode():
@@ -89,8 +132,8 @@ def test_fake_engine_emits_full_event_sequence():
     final_state, decision = fake.propagate("NVDA", "2026-01-15")
 
     types = [e.data["type"] for e in bus.replay_since(0)]
-    # Each agent fires: started → thinking → completed (3 events × N agents)
+    # Each agent fires: started → completed (on_chat_model_start is a no-op now)
     assert types.count("agent_started") == len(CANNED_AGENTS)
-    assert types.count("agent_thinking") == len(CANNED_AGENTS)
     assert types.count("agent_completed") == len(CANNED_AGENTS)
+    assert types.count("agent_thinking") == 0
     assert decision == "BUY"

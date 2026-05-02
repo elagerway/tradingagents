@@ -205,7 +205,7 @@ async def start_run(
         service_role_key=settings.supabase_service_role_key,
     )
     bus = registry.get_or_create(str(run_id))
-    publisher = SSEPublisher(bus=bus, run_id=str(run_id), verbose=False)
+    publisher = SSEPublisher(bus=bus, run_id=str(run_id), verbose=True)
 
     factory = _make_engine_factory(
         callbacks=[publisher],
