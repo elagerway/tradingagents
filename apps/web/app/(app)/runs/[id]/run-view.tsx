@@ -1,7 +1,7 @@
 // apps/web/app/(app)/runs/[id]/run-view.tsx
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -41,56 +41,72 @@ interface Run {
 
 interface AgentState {
   status: AgentStatus;
-  activity?: string;
+  events: AgentEvent[];
   report?: string;
+}
+
+interface ActiveAgentRef {
+  current: string | null;
 }
 
 function buildInitialStates(events: AgentEvent[] | null) {
   const states = new Map<string, AgentState>();
-  for (const a of AGENTS) states.set(a, { status: "pending" });
+  for (const a of AGENTS) states.set(a, { status: "pending", events: [] });
+  const ref: ActiveAgentRef = { current: null };
   if (events) {
-    for (const ev of events) applyEvent(states, ev);
+    for (const ev of events) applyEvent(states, ref, ev);
   }
   return states;
 }
 
-function applyEvent(states: Map<string, AgentState>, ev: AgentEvent) {
+function applyEvent(
+  states: Map<string, AgentState>,
+  activeRef: ActiveAgentRef,
+  ev: AgentEvent,
+) {
   if ("agent" in ev) {
-    const cur = states.get(ev.agent) ?? { status: "pending" };
-    if (ev.type === "agent_started")
-      states.set(ev.agent, { ...cur, status: "running" });
-    if (ev.type === "agent_thinking")
-      states.set(ev.agent, { ...cur, activity: "Thinking…" });
-    if (ev.type === "agent_completed")
+    activeRef.current = ev.agent;
+    const cur = states.get(ev.agent) ?? { status: "pending", events: [] };
+    const events = [...cur.events, ev];
+    if (ev.type === "agent_started") {
+      states.set(ev.agent, { ...cur, status: "running", events });
+    } else if (ev.type === "agent_thinking") {
+      states.set(ev.agent, { ...cur, events });
+    } else if (ev.type === "agent_completed") {
       states.set(ev.agent, {
         ...cur,
         status: "completed",
-        activity: undefined,
+        events,
         report: ev.summary,
       });
-    if (ev.type === "agent_error")
-      states.set(ev.agent, {
-        ...cur,
-        status: "failed",
-        activity: ev.error,
-      });
+    } else if (ev.type === "agent_error") {
+      states.set(ev.agent, { ...cur, status: "failed", events });
+    }
+    return;
+  }
+  if (ev.type === "tool_called" || ev.type === "tool_result") {
+    const agent = activeRef.current;
+    if (!agent) return;
+    const cur = states.get(agent) ?? { status: "running", events: [] };
+    states.set(agent, { ...cur, events: [...cur.events, ev] });
   }
 }
 
 export function RunView({ run }: { run: Run }) {
   const router = useRouter();
   const [states, setStates] = useState(() =>
-    buildInitialStates(run.events as AgentEvent[] | null)
+    buildInitialStates(run.events as AgentEvent[] | null),
   );
   const [activeAgent, setActiveAgent] = useState<string | null>(null);
+  const activeAgentRef = useRef<ActiveAgentRef>({ current: null });
   const [terminal, setTerminal] = useState(
-    run.status === "completed" || run.status === "failed"
+    run.status === "completed" || run.status === "failed",
   );
 
   const onEvent = useCallback((ev: AgentEvent) => {
     setStates((prev) => {
       const next = new Map(prev);
-      applyEvent(next, ev);
+      applyEvent(next, activeAgentRef.current, ev);
       return next;
     });
     if ("agent" in ev) setActiveAgent(ev.agent);
@@ -165,13 +181,16 @@ export function RunView({ run }: { run: Run }) {
 
       <div className="space-y-3">
         {AGENTS.map((agent) => {
-          const s = states.get(agent) ?? { status: "pending" as AgentStatus };
+          const s = states.get(agent) ?? {
+            status: "pending" as AgentStatus,
+            events: [],
+          };
           return (
             <AgentTimelineCard
               key={agent}
               agent={agent}
               status={s.status}
-              activity={s.activity}
+              events={s.events}
               report={s.report}
               isActive={activeAgent === agent}
             />
