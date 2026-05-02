@@ -70,6 +70,10 @@ class SSEPublisher(BaseCallbackHandler):
         self.bus = bus
         self.run_id = run_id
         self.verbose = verbose
+        # LangGraph quirk: on_chain_start gives us the node's display name
+        # ("Market Analyst") but on_chain_end fires with name=None. We track
+        # run_id → agent in this map so we can attribute the matching end.
+        self._active: dict[UUID, str] = {}
 
     # --- node lifecycle --------------------------------------------------
 
@@ -79,11 +83,12 @@ class SSEPublisher(BaseCallbackHandler):
         agent = _agent_name(name, serialized)
         if agent not in _RENDERED_AGENTS:
             return
+        self._active[run_id] = agent
         self.bus.publish({"type": "agent_started", "agent": agent})
 
     def on_chain_end(self, outputs, *, run_id: UUID, name: str | None = None, **kwargs) -> None:
-        agent = _agent_name(name, None)
-        if agent not in _RENDERED_AGENTS:
+        agent = self._active.pop(run_id, None)
+        if agent is None or agent not in _RENDERED_AGENTS:
             return
         # Pull the report text out of outputs if present
         summary_text = ""
@@ -104,8 +109,8 @@ class SSEPublisher(BaseCallbackHandler):
         )
 
     def on_chain_error(self, error, *, run_id: UUID, name: str | None = None, **kwargs) -> None:
-        agent = _agent_name(name, None)
-        if agent not in _RENDERED_AGENTS:
+        agent = self._active.pop(run_id, None)
+        if agent is None or agent not in _RENDERED_AGENTS:
             return
         self.bus.publish(
             {

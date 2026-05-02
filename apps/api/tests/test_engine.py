@@ -25,22 +25,35 @@ def test_on_chain_start_publishes_agent_started():
 
 
 def test_on_chain_end_publishes_agent_completed_with_summary():
+    """LangGraph fires on_chain_end with name=None — we correlate by the
+    run_id uuid LangChain assigns at chain_start time."""
+    bus = Bus()
+    publisher = SSEPublisher(bus=bus, run_id="run-1", verbose=False)
+    rid = uuid4()
+
+    publisher.on_chain_start(serialized={}, inputs={}, run_id=rid, name="Market Analyst")
+    publisher.on_chain_end(
+        outputs={"market_analyst_report": "Long report. " * 50},
+        run_id=rid,
+        name=None,  # the actual LangGraph behavior
+    )
+
+    types = [e.data["type"] for e in bus.replay_since(0)]
+    assert types == ["agent_started", "agent_completed"]
+    completed = bus.replay_since(0)[1].data
+    assert completed["agent"] == "market_analyst"
+    assert len(completed["summary"]) <= 500
+
+
+def test_on_chain_end_without_matching_start_is_dropped():
+    """Inner runnables (RunnableSequence, ChatPromptTemplate) fire end
+    events with name=None and a run_id we never saw a start for. Drop
+    them — they're noise to the timeline."""
     bus = Bus()
     publisher = SSEPublisher(bus=bus, run_id="run-1", verbose=False)
 
-    publisher.on_chain_end(
-        outputs={"market_analyst_report": "Long report. " * 50},
-        run_id=uuid4(),
-        name="market_analyst",
-    )
-
-    events = bus.replay_since(0)
-    assert len(events) == 1
-    e = events[0].data
-    assert e["type"] == "agent_completed"
-    assert e["agent"] == "market_analyst"
-    assert "summary" in e
-    assert len(e["summary"]) <= 500  # adapter truncates
+    publisher.on_chain_end(outputs="some result", run_id=uuid4(), name=None)
+    assert bus.replay_since(0) == []
 
 
 def test_on_chat_model_start_does_not_emit():
@@ -132,7 +145,9 @@ def test_fake_engine_emits_full_event_sequence():
     final_state, decision = fake.propagate("NVDA", "2026-01-15")
 
     types = [e.data["type"] for e in bus.replay_since(0)]
-    # Each agent fires: started → completed (on_chat_model_start is a no-op now)
+    # Each agent fires: started → completed (chat_model_start is a no-op).
+    # The fake engine uses unique run_ids per agent so on_chain_end finds
+    # the matching agent in _active.
     assert types.count("agent_started") == len(CANNED_AGENTS)
     assert types.count("agent_completed") == len(CANNED_AGENTS)
     assert types.count("agent_thinking") == 0
