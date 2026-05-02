@@ -26,21 +26,27 @@ async def load_keys(
     providers: list[str],
     supabase_url: str,
     service_role_key: str,
+    optional_providers: list[str] | None = None,
     transport: httpx.AsyncBaseTransport | None = None,
     timeout: float = 5.0,
 ) -> dict[str, str]:
-    """Fetch and decrypt the user's BYO keys for the given providers.
+    """Fetch and decrypt the user's BYO keys.
 
-    Returns a dict {provider: plaintext}. Raises KeyVaultError if any
-    requested provider has no stored key or the RPC errors.
+    `providers` are required — KeyVaultError is raised if any are missing.
+    `optional_providers` are best-effort: included in the lookup, returned
+    if present, silently absent otherwise. Useful for keys (like
+    alpha_vantage) that the engine can do without.
     """
+    optional = optional_providers or []
+    all_providers = list(dict.fromkeys(list(providers) + optional))
+
     url = f"{supabase_url.rstrip('/')}/rest/v1/rpc/vault_load_keys"
     headers = {
         "apikey": service_role_key,
         "Authorization": f"Bearer {service_role_key}",
         "Content-Type": "application/json",
     }
-    payload = {"p_user_id": str(user_id), "p_providers": providers}
+    payload = {"p_user_id": str(user_id), "p_providers": all_providers}
 
     async with httpx.AsyncClient(transport=transport, timeout=timeout) as client:
         response = await client.post(url, headers=headers, json=payload)
@@ -56,15 +62,16 @@ async def load_keys(
     rows = response.json()
     keys: dict[str, str] = {row["provider"]: row["plaintext"] for row in rows}
 
-    missing = set(providers) - keys.keys()
-    if missing:
+    missing_required = set(providers) - keys.keys()
+    if missing_required:
         logger.warning(
-            "vault_load_keys missing providers",
+            "vault_load_keys missing required providers",
             user_id=str(user_id),
-            missing_providers=sorted(missing),
+            missing_providers=sorted(missing_required),
         )
         raise KeyVaultError(
-            f"No API key configured for: {', '.join(sorted(missing))}. Add one in Settings."
+            f"No API key configured for: {', '.join(sorted(missing_required))}. "
+            "Add one in Settings."
         )
 
     logger.info(

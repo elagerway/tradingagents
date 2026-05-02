@@ -9,6 +9,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from sse_starlette.sse import EventSourceResponse
 
+from api import alpha_vantage_runtime
 from api.auth import current_user_id
 from api.bus import registry
 from api.engine import SSEPublisher
@@ -51,13 +52,19 @@ _PROVIDER_DEFAULT_MODELS: dict[str, tuple[str, str]] = {
 }
 
 
-def _build_engine_config(*, run_config: dict, api_key: str) -> dict[str, Any]:
+def _build_engine_config(
+    *,
+    run_config: dict,
+    api_key: str,
+    has_alpha_vantage: bool = False,
+) -> dict[str, Any]:
     """Compose the engine_config dict for TradingAgentsGraph.
 
     Picks provider-appropriate model defaults if `run_config` doesn't
-    explicitly set deep_think_llm / quick_think_llm, and translates
+    explicitly set deep_think_llm / quick_think_llm, translates
     web-side provider names ("dashscope"/"zhipu") to the engine names
-    ("qwen"/"glm") expected by tradingagents.llm_clients.factory.
+    ("qwen"/"glm"), and — if the user has an Alpha Vantage key in their
+    vault — flips the news_data vendor to AV with yfinance fallback.
     """
     from tradingagents.default_config import DEFAULT_CONFIG
 
@@ -67,6 +74,16 @@ def _build_engine_config(*, run_config: dict, api_key: str) -> dict[str, Any]:
         provider_engine, _PROVIDER_DEFAULT_MODELS["openai"]
     )
 
+    # Merge data_vendors: defaults < run_config override < AV-aware override.
+    data_vendors = {
+        **DEFAULT_CONFIG.get("data_vendors", {}),
+        **run_config.get("data_vendors", {}),
+    }
+    if has_alpha_vantage:
+        # Comma list = primary then fallback; engine falls back automatically
+        # on AlphaVantageRateLimitError. yfinance news is weaker so AV first.
+        data_vendors["news_data"] = "alpha_vantage,yfinance"
+
     return {
         **DEFAULT_CONFIG,
         **run_config,
@@ -74,6 +91,7 @@ def _build_engine_config(*, run_config: dict, api_key: str) -> dict[str, Any]:
         "deep_think_llm": run_config.get("deep_think_llm", deep_default),
         "quick_think_llm": run_config.get("quick_think_llm", quick_default),
         "api_key": api_key,
+        "data_vendors": data_vendors,
         # Render's container has /tmp writable but $HOME may be locked-down
         "results_dir": "/tmp/tradingagents/logs",
         "data_cache_dir": "/tmp/tradingagents/cache",
@@ -110,7 +128,11 @@ def _make_engine_factory(
         raise RuntimeError("user_id is required for real-engine factory")
 
     settings = get_settings()
-    engine_config = _build_engine_config(run_config=rc, api_key=api_key)
+    engine_config = _build_engine_config(
+        run_config=rc,
+        api_key=api_key,
+        has_alpha_vantage="alpha_vantage" in env,
+    )
 
     logger.info(
         "real_engine_factory",
@@ -150,13 +172,15 @@ async def start_run(
     if str(run["user_id"]) != str(user_id):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="not your run")
 
-    # 2. Load BYO keys (synchronous w.r.t. start: fail fast if missing)
+    # 2. Load BYO keys. The LLM provider key is required; alpha_vantage is
+    # best-effort — if the user has it, the engine flips news_data to AV.
     config = run.get("config") or {}
     provider = config.get("llm_provider", "openai")
     try:
         env_keys = await load_keys(
             user_id=user_id,
             providers=[provider],
+            optional_providers=["alpha_vantage"],
             supabase_url=settings.supabase_url,
             service_role_key=settings.supabase_service_role_key,
         )
@@ -165,6 +189,14 @@ async def start_run(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(exc),
         ) from exc
+
+    # 2b. Inject the user's Alpha Vantage key into the per-task contextvar.
+    # asyncio.create_task copies the current context, so the worker thread
+    # spawned via asyncio.to_thread sees this user's key — not a leaked one
+    # from another concurrent run.
+    av_key = env_keys.get("alpha_vantage")
+    if av_key:
+        alpha_vantage_runtime.current_key.set(av_key)
 
     # 3. Mark run started + create bus
     await mark_run_started(

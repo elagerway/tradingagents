@@ -262,3 +262,52 @@ def test_build_engine_config_respects_explicit_models():
     )
     assert cfg["deep_think_llm"] == "deepseek-v4-pro"
     assert cfg["quick_think_llm"] == "deepseek-v4-flash"
+
+
+def test_build_engine_config_keeps_yfinance_news_when_no_av():
+    from api.routes import _build_engine_config
+
+    cfg = _build_engine_config(
+        run_config={"llm_provider": "openai"},
+        api_key="sk-fake",
+        has_alpha_vantage=False,
+    )
+    assert cfg["data_vendors"]["news_data"] == "yfinance"
+
+
+def test_build_engine_config_flips_news_to_av_when_present():
+    """When the user has an Alpha Vantage key, news_data should switch to
+    AV with yfinance fallback. Other categories remain on yfinance —
+    AV's free tier (5 req/min) can't handle the full data load."""
+    from api.routes import _build_engine_config
+
+    cfg = _build_engine_config(
+        run_config={"llm_provider": "openai"},
+        api_key="sk-fake",
+        has_alpha_vantage=True,
+    )
+    assert cfg["data_vendors"]["news_data"] == "alpha_vantage,yfinance"
+    assert cfg["data_vendors"]["core_stock_apis"] == "yfinance"
+    assert cfg["data_vendors"]["fundamental_data"] == "yfinance"
+    assert cfg["data_vendors"]["technical_indicators"] == "yfinance"
+
+
+def test_alpha_vantage_runtime_contextvar_overrides_env(monkeypatch):
+    """The patched get_api_key() must prefer the contextvar over os.environ
+    so concurrent runs from different users don't leak each other's keys."""
+    from api import alpha_vantage_runtime
+
+    alpha_vantage_runtime.install()
+    monkeypatch.setenv("ALPHA_VANTAGE_API_KEY", "ENV-FALLBACK")
+
+    import tradingagents.dataflows.alpha_vantage_common as av_common
+
+    # No contextvar set: falls back to os.environ
+    assert av_common.get_api_key() == "ENV-FALLBACK"
+
+    # Contextvar wins
+    token = alpha_vantage_runtime.current_key.set("PER-RUN-KEY")
+    try:
+        assert av_common.get_api_key() == "PER-RUN-KEY"
+    finally:
+        alpha_vantage_runtime.current_key.reset(token)

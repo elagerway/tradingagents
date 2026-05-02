@@ -93,3 +93,42 @@ async def test_load_keys_raises_on_5xx():
             service_role_key="service-role-token",
             transport=transport,
         )
+
+
+async def test_load_keys_returns_optional_when_present():
+    """optional_providers populate the returned dict when stored."""
+    transport = make_mock_transport(
+        status_code=200,
+        payload=[
+            {"provider": "openai", "plaintext": "sk-test-openai"},
+            {"provider": "alpha_vantage", "plaintext": "AV-KEY-123"},
+        ],
+    )
+    keys = await load_keys(
+        user_id=USER_ID,
+        providers=["openai"],
+        optional_providers=["alpha_vantage"],
+        supabase_url="http://test.local",
+        service_role_key="service-role-token",
+        transport=transport,
+    )
+    assert keys == {"openai": "sk-test-openai", "alpha_vantage": "AV-KEY-123"}
+
+
+async def test_load_keys_does_not_raise_when_optional_missing():
+    """A missing optional provider must NOT raise — the engine can do
+    without it (e.g. fall back to yfinance)."""
+    transport = make_mock_transport(
+        status_code=200,
+        payload=[{"provider": "openai", "plaintext": "sk-test-openai"}],
+    )
+    keys = await load_keys(
+        user_id=USER_ID,
+        providers=["openai"],
+        optional_providers=["alpha_vantage"],
+        supabase_url="http://test.local",
+        service_role_key="service-role-token",
+        transport=transport,
+    )
+    assert keys == {"openai": "sk-test-openai"}
+    assert "alpha_vantage" not in keys

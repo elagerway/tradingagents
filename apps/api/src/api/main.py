@@ -3,6 +3,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from api import alpha_vantage_runtime
 from api.logging import configure_logging
 from api.routes import router as runs_router
 from api.settings import get_settings
@@ -10,6 +11,7 @@ from api.settings import get_settings
 
 def create_app() -> FastAPI:
     configure_logging()
+    alpha_vantage_runtime.install()
     settings = get_settings()
     app = FastAPI(title="tradingagents-api", version="0.1.0")
 
