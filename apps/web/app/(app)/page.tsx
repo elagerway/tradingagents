@@ -10,6 +10,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { vancouverDateTimeString } from "@/lib/format-date";
 import { createClient } from "@/lib/supabase/server";
 
 const STATUS_VARIANT: Record<
@@ -77,7 +78,7 @@ export default async function RunsListPage() {
                         ?.decision ?? "—"}
                     </TableCell>
                     <TableCell className="text-muted-foreground">
-                      {new Date(r.created_at).toLocaleString()}
+                      {vancouverDateTimeString(r.created_at)}
                     </TableCell>
                   </TableRow>
                 ))}

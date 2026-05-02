@@ -13,6 +13,7 @@ import {
   EventStreamConsumer,
   type AgentEvent,
 } from "@/components/event-stream-consumer";
+import { vancouverDateTimeString } from "@/lib/format-date";
 import { createClient } from "@/lib/supabase/browser";
 import { env } from "@/lib/env";
 
@@ -162,7 +163,7 @@ export function RunView({ run }: { run: Run }) {
           </h1>
           <p className="text-sm text-muted-foreground">
             Run {run.id.slice(0, 8)} · started{" "}
-            {new Date(run.created_at).toLocaleString()}
+            {vancouverDateTimeString(run.created_at)}
           </p>
         </div>
         <div className="flex items-center gap-2">

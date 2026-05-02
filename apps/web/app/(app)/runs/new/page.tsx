@@ -3,6 +3,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { NewRunForm } from "@/components/new-run-form";
+import { vancouverDateString } from "@/lib/format-date";
 import { createClient } from "@/lib/supabase/server";
 
 export default async function NewRunPage({
@@ -11,7 +12,7 @@ export default async function NewRunPage({
   searchParams: Promise<{ error?: string }>;
 }) {
   const params = await searchParams;
-  const today = new Date().toISOString().slice(0, 10);
+  const today = vancouverDateString();
 
   const supabase = await createClient();
   const { count: keyCount } = await supabase
